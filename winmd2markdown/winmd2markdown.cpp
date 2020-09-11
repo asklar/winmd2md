@@ -9,6 +9,10 @@
 using namespace std;
 using namespace winmd::reader;
 
+string currentNamespace;
+string_view ObjectClassName = "Object"; // corresponds to IInspectable in C++/WinRT
+string_view ctorName = ".ctor";
+
 std::string_view ToString(ElementType elementType) {
   switch (elementType) {
   case ElementType::Boolean:
@@ -36,7 +40,7 @@ std::string_view ToString(ElementType elementType) {
   case ElementType::ValueType:
     return "{ValueType}";
   case ElementType::Object:
-    return "{Object}";
+    return ObjectClassName;
   default:
     cout << std::hex << (int)elementType << endl;
     return "{type}";
@@ -57,24 +61,32 @@ std::string GetTypeKind(const TypeDef& type)
   }
 }
 
-string_view ToString(const coded_index<TypeDefOrRef>& tdr)
+string GetNamespacePrefix(std::string_view ns)
+{
+  if (ns == currentNamespace) return "";
+  else return string(ns) + ".";
+}
+
+string ToString(const coded_index<TypeDefOrRef>& tdr)
 {
   switch (tdr.type()) {
   case TypeDefOrRef::TypeDef:
   {
     const auto& td = tdr.TypeDef();
-    return td.TypeName();
+    return GetNamespacePrefix(td.TypeNamespace()) + string(td.TypeName());
   }
   case TypeDefOrRef::TypeRef:
   {
     const auto& tr = tdr.TypeRef();
-    return tr.TypeName();
+    return GetNamespacePrefix(tr.TypeNamespace()) + string(tr.TypeName());
   }
   case TypeDefOrRef::TypeSpec:
   {
     const auto& ts = tdr.TypeSpec();
     return "TypeSpec";
   }
+  default:
+    throw std::invalid_argument("");
   }
 
 }
@@ -127,7 +139,7 @@ string GetType(const TypeSig& type) {
       break;
     }
 
-    return "some type";
+    return "{NYI}some type";
   }
 }
 
@@ -158,16 +170,24 @@ void print_method(const MethodDef& method, string_view realName = "") {
   }
   const auto flags = method.Flags();
   const auto& name = realName.empty() ? method.Name() : realName;
-  std::cout << "    " << (flags.Static() ? "static " : "") << returnType << " " << name << "(";
+  std::cout << "    "
+    << (flags.Static() ? "static " : "")
+//    << (flags.Abstract() ? "abstract " : "")
+    << returnType << " " << name << "(";
 
-  bool first = true;
+  int i = 0;
 
-  for (auto const& param : signature.Params()) {
-    if (!first) {
+  std::vector<string_view> paramNames;
+  for (auto const& p : method.ParamList()) {
+    paramNames.push_back(p.Name());
+  }
+
+  for (const auto& param : signature.Params()) {
+    if (i != 0) {
       cout << ", ";
     }
-    first = false;
-    cout << GetType(param.Type());
+    cout << GetType(param.Type()) << " " << paramNames[i];
+    i++;
   }
   cout << ")" << endl;
 }
@@ -190,7 +210,7 @@ void print_class(const TypeDef& type) {
     print_property(prop);
   }
   for (auto const& method : type.MethodList()) {
-    if (method.Name() == ".ctor") {
+    if (method.Name() == ctorName) {
       print_method(method, type.TypeName());
     } else if (method.SpecialName()) {
       continue; // get_ / put_ methods that are properties
@@ -201,13 +221,13 @@ void print_class(const TypeDef& type) {
   }
 }
 
-void print_type(const TypeDef& type) {
-  cout << "type: " << type.TypeName() << endl;
-}
-
 void print(const cache::namespace_members& ns) {
   for (auto const& enumEntry : ns.enums) {
     print_enum(enumEntry);
+  }
+
+  for (auto const& interfaceEntry : ns.interfaces) {
+    print_class(interfaceEntry);
   }
 
   for (auto const& structEntry : ns.structs) {
@@ -219,15 +239,20 @@ void print(const cache::namespace_members& ns) {
   }
 }
 
-int main()
+int main(int argc, char** argv)
 {
-  std::string winmdPath(R"(E:\rnw\vnext\build\x86\Debug\Microsoft.ReactNative\Merged\Microsoft.ReactNative.winmd)");
+  if (argc != 2) {
+    cerr << "Usage: " << argv[0] << " pathToMetadata.winmd";
+    return -1;
+  }
 
-  winmd::reader::database db(winmdPath);
+  std::string winmdPath(argv[1]);
   cache cache(winmdPath);
   
   for (auto const& namespaceEntry : cache.namespaces()) {
     cout << "namespace " << namespaceEntry.first << endl;
+    currentNamespace = namespaceEntry.first;
     print(namespaceEntry.second);
   }
+  return 0;
 }

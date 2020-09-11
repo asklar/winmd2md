@@ -4,11 +4,12 @@
 #include <iostream>
 #include <string>
 #include <filesystem>
+#include <sstream>
 #include <winmd_reader.h>
 using namespace std;
 using namespace winmd::reader;
 
-std::string ToString(ElementType elementType) {
+std::string_view ToString(ElementType elementType) {
   switch (elementType) {
   case ElementType::Boolean:
     return "bool";
@@ -56,6 +57,81 @@ std::string GetTypeKind(const TypeDef& type)
   }
 }
 
+string_view ToString(const coded_index<TypeDefOrRef>& tdr)
+{
+  switch (tdr.type()) {
+  case TypeDefOrRef::TypeDef:
+  {
+    const auto& td = tdr.TypeDef();
+    return td.TypeName();
+  }
+  case TypeDefOrRef::TypeRef:
+  {
+    const auto& tr = tdr.TypeRef();
+    return tr.TypeName();
+  }
+  case TypeDefOrRef::TypeSpec:
+  {
+    const auto& ts = tdr.TypeSpec();
+    return "TypeSpec";
+  }
+  }
+
+}
+
+string GetType(const TypeSig& type) {
+  if (type.element_type() != ElementType::Class &&
+    type.element_type() != ElementType::ValueType &&
+    type.element_type() != ElementType::GenericInst
+    ) {
+    return string(ToString(type.element_type()));
+  }
+  else {
+    auto valueType = type.Type();
+    switch (valueType.index())
+    {
+    case 0: // ElementType
+      break;
+    case 1: // coded_index<TypeDefOrRef>
+    {
+      const auto& t = std::get<coded_index<TypeDefOrRef>>(valueType);
+      return string(ToString(t));
+    }
+    case 2: // GenericTypeIndex
+      break;
+    case 3: // GenericTypeInstSig
+    {
+      const auto& gt = std::get<GenericTypeInstSig>(valueType);
+      const auto& genericType = gt.GenericType();
+      const auto& outerType = std::string(ToString(genericType));
+      stringstream ss;
+      const auto& prettyOuterType = outerType.substr(0, outerType.find('`'));
+      ss << prettyOuterType << '<';
+
+      bool first = true;
+      for (const auto& arg : gt.GenericArgs()) {
+        if (!first) {
+          ss << ", ";
+        }
+        first = false;
+        ss << GetType(arg);
+      }
+
+      ss << '>';
+      return ss.str();
+    }
+    case 4: // GenericMethodTypeIndex
+      break;
+
+    default:
+      break;
+    }
+
+    return "some type";
+  }
+}
+
+
 void print_enum(const TypeDef& type) {
   cout << "enum " << type.TypeName() << endl;
   for (auto const& value : type.FieldList()) {
@@ -67,33 +143,35 @@ void print_enum(const TypeDef& type) {
 }
 
 void print_property(const Property& prop) {
-  cout << "    " << prop.Name() << endl;
+  cout << "    " << GetType(prop.Type().Type()) << " " << prop.Name() << endl;
 }
 
-void print_method(const MethodDef& method) {
+void print_method(const MethodDef& method, string_view realName = "") {
   std::string returnType;
+  const auto& signature = method.Signature();
   if (method.Signature().ReturnType()) {
-    auto elementType = method.Signature().ReturnType().Type().element_type();
-    returnType = ToString(elementType);
-    //m.Signature().ReturnType().Type().element_type() == winmd::reader::ElementType::
+    const auto& type = method.Signature().ReturnType().Type();
+    returnType = GetType(type);
   }
   else {
     returnType = "void";
   }
-  //auto index = m.Signature().ReturnType().Type().Type().index();
-  //winmd::reader::coded_index<winmd::reader::TypeDefOrRef> retType(&db.get_table<winmd::reader::TypeDefOrRef>(), (uint32_t)index);
   const auto flags = method.Flags();
-  std::cout << "    " << (flags.Static() ? "static " : "") << returnType << " " << method.Name() << "(...)" << endl;
+  const auto& name = realName.empty() ? method.Name() : realName;
+  std::cout << "    " << (flags.Static() ? "static " : "") << returnType << " " << name << "(";
+
+  bool first = true;
+
+  for (auto const& param : signature.Params()) {
+    if (!first) {
+      cout << ", ";
+    }
+    first = false;
+    cout << GetType(param.Type());
+  }
+  cout << ")" << endl;
 }
 
-string GetType(const TypeSig& type) {
-  if (type.element_type() != ElementType::Class) {
-    return ToString(type.element_type());
-  }
-  else {
-    return "some type";
-  }
-}
 
 void print_field(const Field& field) {
   cout << "    " << GetType(field.Signature().Type())  << " " << field.Name() << endl;
@@ -112,10 +190,14 @@ void print_class(const TypeDef& type) {
     print_property(prop);
   }
   for (auto const& method : type.MethodList()) {
-    if (method.SpecialName()) {
+    if (method.Name() == ".ctor") {
+      print_method(method, type.TypeName());
+    } else if (method.SpecialName()) {
       continue; // get_ / put_ methods that are properties
     }
-    print_method(method);
+    else {
+      print_method(method);
+    }
   }
 }
 
@@ -149,48 +231,3 @@ int main()
     print(namespaceEntry.second);
   }
 }
-
-
-//  db.get_cache().namespaces()
-//  for (auto const& type : db.TypeDef) {
-//    if (!type.Flags().WindowsRuntime()) {
-//      continue;
-//    }
-//    const auto name = type.TypeName();
-//    const bool abstract = type.Flags().Abstract();
-//
-//    std::cout << GetTypeKind(type) << " " << type.TypeName() << std::endl;
-//    if (!type.Flags().Abstract() && type.is_enum()) {
-//      for (auto const& value : type.FieldList()) {
-//        if (value.Flags().SpecialName()) {
-//          continue;
-//        }
-//        cout << "    " << value.Name() << " = " << std::hex << "0x" << ((value.Signature().Type().element_type() == ElementType::U4) ? value.Constant().ValueUInt32() : value.Constant().ValueInt32()) << endl;
-//      }
-//    }
-//    for (auto const& p : type.PropertyList()) {
-//      cout << "    " << p.Name() << endl;
-//    }
-//
-//    for (auto const& m : type.MethodList()) {
-//      //for (auto const& p : m.Signature().Params()) {
-//      ////  p.Type().Type()._Storage().
-//      //}
-//      if (m.SpecialName()) continue; // get_ / put_ methods that are properties
-//      
-//      std::string returnType;
-//      if (m.Signature().ReturnType()) {
-//        auto elementType = m.Signature().ReturnType().Type().element_type();
-//        returnType = ToString(elementType);
-//        //m.Signature().ReturnType().Type().element_type() == winmd::reader::ElementType::
-//      }
-//      else {
-//        returnType = "void";
-//      }
-//      //auto index = m.Signature().ReturnType().Type().Type().index();
-//      //winmd::reader::coded_index<winmd::reader::TypeDefOrRef> retType(&db.get_table<winmd::reader::TypeDefOrRef>(), (uint32_t)index);
-//      const auto flags = m.Flags();
-//      std::cout << "    " << (flags.Static() ? "static " : "") << returnType << " " << m.Name() << "(...)" << endl;
-//    }
-//  }
-//}

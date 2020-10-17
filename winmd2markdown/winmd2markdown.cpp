@@ -299,9 +299,11 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
   }
   const auto flags = method.Flags();
   const auto& name = realName.empty() ? method.Name() : realName;
-  ss  << (flags.Static() ? code("static ") : "")
+
+  stringstream sstr;
+  sstr  << (flags.Static() ? code("static ") : "")
 //    << (flags.Abstract() ? "abstract " : "")
-    << code(returnType) << " **" << code(name) << "**(";
+    << returnType << " **" << code(name) << "**(";
 
   int i = 0;
 
@@ -309,15 +311,20 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
   for (auto const& p : method.ParamList()) {
     paramNames.push_back(p.Name());
   }
+  if (!paramNames.empty() && paramNames[0] == "result") {
+    paramNames.erase(paramNames.begin());
+  }
 
   for (const auto& param : signature.Params()) {
     if (i != 0) {
-      ss << ", ";
+      sstr << ", ";
     }
-    ss << GetType(param.Type()) << " " << paramNames[i];
+
+    sstr << (param.ByRef() ? "**out** " : "") << GetType(param.Type()) << " " << paramNames[i];
     i++;
   }
-  ss << ")" << "\n\n";
+  sstr << ")";
+  ss.StartSection(sstr.str());
 }
 
 
@@ -329,8 +336,16 @@ void process_field(output& ss, const Field& field) {
 void process_struct(output& ss, const TypeDef& type) {
   auto t = ss.StartType(type.TypeName(), "struct");
   auto fs = ss.StartSection("Fields");
+
+  using entry_t = pair<string_view, const Field>;
+  std::list<entry_t> sorted;
   for (auto const& field : type.FieldList()) {
-    process_field(ss, field);
+    sorted.push_back(make_pair<string_view, const Field>(field.Name(), Field(field)));
+  }
+  sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
+
+  for (auto const& field : sorted) {
+    process_field(ss, field.second);
   }
 }
 
@@ -352,33 +367,53 @@ void process_class(output& ss, const TypeDef& type, string kind) {
 
   {
     auto ps = ss.StartSection("Properties");
-    for (auto const& prop : type.PropertyList()) {
-      process_property(ss, prop);
+    using entry_t = pair<string_view, const Property>;
+    std::list<entry_t> sorted;
+    for (auto const& prop: type.PropertyList()) {
+      sorted.push_back(make_pair<string_view, const Property>(prop.Name(), Property(prop)));
+    }
+    sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
+    for (auto const& prop : sorted) {
+      process_property(ss, prop.second);
     }
   }
   ss << "\n";
   {
     auto ms = ss.StartSection("Methods");
+    using entry_t = pair<string_view, const MethodDef>;
+    std::list<entry_t> sorted;
     for (auto const& method : type.MethodList()) {
-      if (method.Name() == ctorName) {
-        process_method(ss, method, type.TypeName());
+      sorted.push_back(make_pair<string_view, const MethodDef>(method.Name(), MethodDef(method)));
+    }
+    sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
+
+    for (auto const& method : sorted) {
+      if (method.first == ctorName) {
+        process_method(ss, method.second, type.TypeName());
       }
-      else if (method.SpecialName()) {
-        std::cout << "Skipping special method: " << string(method.Name()) << "\n";
+      else if (method.second.SpecialName()) {
+        std::cout << "Skipping special method: " << string(method.second.Name()) << "\n";
         continue; // get_ / put_ methods that are properties
       }
       else {
-        process_method(ss, method);
+        process_method(ss, method.second);
       }
     }
   }
   ss << "\n";
   {
     auto es = ss.StartSection("Events");
+    using entry_t = pair<string_view, const Event>;
+    std::list<entry_t> sorted;
     for (auto const& evt : type.EventList()) {
-      auto n = evt.Name();
-      auto ees = ss.StartSection("`" + string(evt.Name()) + "`");
-      ss << "Type: " << ToString(evt.EventType()) << "\n";
+      sorted.push_back(make_pair<string_view, const Event>(evt.Name(), Event(evt)));
+    }
+    sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
+
+    for (auto const& evt : sorted) {
+      auto n = evt.first;
+      auto ees = ss.StartSection("`" + string(evt.first) + "`");
+      ss << "Type: " << ToString(evt.second.EventType()) << "\n";
     }
   }
 }

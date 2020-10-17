@@ -39,8 +39,12 @@ public:
     indents = 0;
     std::filesystem::path out("out");
     currentFile = std::ofstream(out / (std::string(name) + ".md"));
-    
-    return type_helper(*this, string(kind) + " " + string(name));
+    auto title = string(kind) + " " + string(name);
+    currentFile << "---\n" <<
+      "id: " << name << "\n" <<
+      "title: " << title<< "\n" <<
+      "---\n\n";
+    return type_helper(*this);
   }
 
   section_helper StartSection(const std::string& a) {
@@ -63,8 +67,10 @@ private:
     output& o;
     section_helper(output& out, string s) : o(out) {
       o.indents++;
-      string t(o.indents, '#');
-      o << t << " " << s << "\n";
+      if (!s.empty()) {
+        string t(o.indents, '#');
+        o << t << " " << s << "\n";
+      }
     }
     ~section_helper() {
       o.indents--;
@@ -73,7 +79,7 @@ private:
   struct type_helper {
     output& o;
     section_helper sh;
-    type_helper(output& out, string s) : o(out), sh(o.StartSection(s)) {};
+    type_helper(output& out) : o(out), sh(o.StartSection("")) {};
     ~type_helper() {
       o.EndType();
     }
@@ -361,8 +367,23 @@ void process_class(output& ss, const TypeDef& type, string kind) {
   auto t = ss.StartType(type.TypeName(), kind);
   
   auto extends = ToString(type.Extends());
-  if (!extends.empty()) {
-    ss << "Extends: " + extends << "\n";
+  if (!extends.empty() && extends != "System.Object") {
+    ss << "Extends: " + extends << "\n\n";
+  }
+
+  {
+    int i = 0;
+    for (auto const& ii : type.InterfaceImpl()) {
+      if (i == 0) {
+        ss << "Implements: ";
+      }
+      else {
+        ss << ", ";
+      }
+      i++;
+      ss << ToString(ii.Interface());
+    }
+    ss << "\n\n";
   }
 
   {

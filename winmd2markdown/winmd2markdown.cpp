@@ -383,28 +383,56 @@ void process_class(output& ss, const TypeDef& type, string kind) {
   }
 }
 
-void process(output& ss, const cache::namespace_members& ns) {
+string link(string_view n) {
+  return "- [" + code(n) + "](" + string(n) + ")";
+}
+
+void process(output& ss, string_view namespaceName, const cache::namespace_members& ns) {
+
+  ofstream index("out/index.md");
+  index << "# namespace " << namespaceName << "\n";
+
+  index << "## Enums" << "\n";
   for (auto const& enumEntry : ns.enums) {
     process_enum(ss, enumEntry);
+    index << link(enumEntry.TypeName()) << "\n";
   }
 
+  index << "## Interfaces" << "\n";
   for (auto const& interfaceEntry : ns.interfaces) {
     process_class(ss, interfaceEntry, "interface");
+    index << link(interfaceEntry.TypeName()) << "\n";
   }
 
+  index << "## Structs" << "\n";
   for (auto const& structEntry : ns.structs) {
     process_struct(ss, structEntry);
+    index << link(structEntry.TypeName()) << "\n";
   }
+
+  index << "## Classes" << "\n";
 
   for (auto const& classEntry : ns.classes) {
     process_class(ss, classEntry, "class");
+    index << link(classEntry.TypeName()) << "\n";
   }
 
+  index << "## Delegates" << "\n";
   for (auto const& delegateEntry : ns.delegates) {
     process_delegate(ss, delegateEntry);
+    index << link(delegateEntry.TypeName()) << "\n";
   }
+
 }
 
+void write_index(output& ss, const pair<string_view, cache::namespace_members>& ns) {
+  ss.currentFile = std::ofstream("out/index.md");
+  auto start = ss.StartSection("namespace `" + string(ns.first) + "`");
+    for (auto const& t : ns.second.types) {
+      ss << "- [`" << t.first << "`]" << "(" << t.first << ")\n";
+    }
+  ss.currentFile.close();
+}
 int main(int argc, char** argv)
 {
   if (argc != 2) {
@@ -423,7 +451,7 @@ int main(int argc, char** argv)
     filesystem::current_path(nsPath);
     currentNamespace = namespaceEntry.first;
     filesystem::current_path("..");
-    process(o, namespaceEntry.second);
+    process(o, namespaceEntry.first, namespaceEntry.second);
   }
   return 0;
 }

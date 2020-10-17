@@ -413,7 +413,9 @@ void process_class(output& ss, const TypeDef& type, string kind) {
         process_method(ss, method.second, type.TypeName());
       }
       else if (method.second.SpecialName()) {
+#if DEBUG
         std::cout << "Skipping special method: " << string(method.second.Name()) << "\n";
+#endif
         continue; // get_ / put_ methods that are properties
       }
       else {

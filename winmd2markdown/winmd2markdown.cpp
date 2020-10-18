@@ -8,7 +8,7 @@
 #include <sstream>
 #include <winmd_reader.h>
 #include <filesystem>
-#include <array>
+
 using namespace std;
 using namespace winmd::reader;
 

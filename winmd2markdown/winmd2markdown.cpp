@@ -21,6 +21,16 @@ std::string code(std::string_view v) {
   return "`" + string(v) + "`";
 }
 
+bool hasAttribute(const pair<CustomAttribute, CustomAttribute>& attrs, string attr) {
+  for (auto const& ca : attrs) {
+    if (ca.TypeNamespaceAndName().second == attr) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
 struct output
 {
 private:
@@ -39,7 +49,7 @@ public:
     indents = 0;
     std::filesystem::path out("out");
     currentFile = std::ofstream(out / (std::string(name) + ".md"));
-    auto title = string(kind) + " " + string(name);
+    const auto title = string(kind) + " " + string(name);
     currentFile << "---\n" <<
       "id: " << name << "\n" <<
       "title: " << title<< "\n" <<
@@ -175,6 +185,7 @@ string GetType(const TypeSig& type);
 
 string ToString(const coded_index<TypeDefOrRef>& tdr, bool toCode = true)
 {
+  if (!tdr) return {};
   if (tdr) {
     switch (tdr.type()) {
     case TypeDefOrRef::TypeDef:
@@ -190,10 +201,10 @@ string ToString(const coded_index<TypeDefOrRef>& tdr, bool toCode = true)
     case TypeDefOrRef::TypeSpec:
     {
       const auto& ts = tdr.TypeSpec();
-      auto n = ts.Signature();
-      auto s = n.GenericTypeInst();
-      auto p = ToString(s.GenericType());
-      auto ac = s.GenericArgCount();
+      const auto& n = ts.Signature();
+      const auto& s = n.GenericTypeInst();
+      const auto& p = ToString(s.GenericType());
+      const auto& ac = s.GenericArgCount();
       if (ac != 1) {
         cout << "mmmm..." << endl;
       }
@@ -231,7 +242,7 @@ string GetType(const TypeSig::value_type& valueType)
     break;
   case 3: // GenericTypeInstSig
   {
-    const auto& gt = std::get<GenericTypeInstSig>(valueType);    
+    const auto& gt = std::get<GenericTypeInstSig>(valueType);
     const auto& genericType = gt.GenericType();
     const auto& outerType = std::string(ToString(genericType, false));
     stringstream ss;
@@ -239,6 +250,7 @@ string GetType(const TypeSig::value_type& valueType)
     ss << typeToMarkdown(genericType.TypeRef().TypeNamespace(), prettyOuterType, true, "-" + std::to_string(gt.GenericArgCount())) << '<';
 
     bool first = true;
+    
     for (const auto& arg : gt.GenericArgs()) {
       if (!first) {
         ss << ", ";
@@ -246,9 +258,11 @@ string GetType(const TypeSig::value_type& valueType)
       first = false;
       ss << GetType(arg);
     }
-    if (gt.GenericArgs().first == gt.GenericArgs().second && gt.GenericArgCount() != 0) {
-      auto gat = gt.GenericType();
-      auto n = GetType(gat);
+
+    if (winmd::reader::empty(gt.GenericArgs()) && gt.GenericArgCount() != 0) {
+      /// Missing how to figure out the T in IGeneric<T>
+      /// This indicates that we relied on a temporary that got deleted when chaining several calls
+      throw std::invalid_argument("you found a bug - we probably deleted an object we shouldn't (when doing a.b().c().d())");
     }
     ss << '>';
     return ss.str();
@@ -287,25 +301,52 @@ void process_enum(output& ss, const TypeDef& type) {
   }
 }
 
+MethodDef find_method(const TypeDef& type, string name) {
+  for (const auto& m : type.MethodList()) {
+    if (m.Name() == name) {
+      return m;
+    }
+  }
+  return MethodDef();
+}
+DEFINE_ENUM_FLAG_OPERATORS(MemberAccess);
 
-void process_property(output& ss, const Property& prop) {
-  ss.StartSection(code(prop.Name()));
-  ss << "Type: " << GetType(prop.Type().Type()) << "\n";
+
+void process_property(output& ss, const Property& prop, std::string description = {}) {
+  const auto& type = GetType(prop.Type().Type());
+  const auto& name = code(prop.Name());
+
+  const auto& owningType = prop.Parent();
+  const auto& getter = find_method(owningType, "get_" + string(prop.Name()));
+  const auto& setter = find_method(owningType, "put_" + string(prop.Name()));
+  bool isStatic{ false };
+  if ((getter && getter.Flags().Static()) || (setter && setter.Flags().Static())) {
+    isStatic = true;
+  }
+  bool readonly{ false };
+  if (!setter || (setter.Flags().Access() & MemberAccess::Public) != MemberAccess::Public) {
+    readonly = true;
+  }
+
+  ss << "| " << (isStatic ? "static " : "") << (readonly ? "readonly " : "") << "| " <<name << " | " << type << " | " << description << " | \n";
 }
 
-void process_method(output& ss, const MethodDef& method, string_view realName = "") {
+void process_method(output& ss, const MethodDef& method, string_view realName = "", string description = {}) {
   std::string returnType;
   const auto& signature = method.Signature();
-  if (method.Signature().ReturnType()) {
-    const auto& type = method.Signature().ReturnType().Type();
-    returnType = GetType(type);
+  if (realName.empty()) {
+    if (method.Signature().ReturnType()) {
+      const auto& sig = method.Signature();
+      const auto& rt = sig.ReturnType();
+      const auto& type = rt.Type();
+      returnType = GetType(type);
+    }
+    else {
+      returnType = "void";
+    }
   }
-  else {
-    returnType = "void";
-  }
-  const auto flags = method.Flags();
+  const auto& flags = method.Flags();
   const auto& name = realName.empty() ? method.Name() : realName;
-
   stringstream sstr;
   sstr  << (flags.Static() ? code("static ") : "")
 //    << (flags.Abstract() ? "abstract " : "")
@@ -330,18 +371,19 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
     i++;
   }
   sstr << ")";
-  ss.StartSection(sstr.str());
+  ss << "- " << sstr.str() << "<br/>\n";
+  ss << description << "\n";
 }
 
 
-void process_field(output& ss, const Field& field) {
-  auto fs = ss.StartSection(string(field.Name()));
-  ss << "Type: " << GetType(field.Signature().Type()) << "\n";
+void process_field(output& ss, const Field& field, string description = {}) {
+  const auto& type = GetType(field.Signature().Type());
+  ss << "| " << field.Name() << " | " << type << " | " << description << " |\n";
 }
 
 void process_struct(output& ss, const TypeDef& type) {
-  auto t = ss.StartType(type.TypeName(), "struct");
-  auto fs = ss.StartSection("Fields");
+  const auto t = ss.StartType(type.TypeName(), "struct");
+  const auto fs = ss.StartSection("Fields");
 
   using entry_t = pair<string_view, const Field>;
   std::list<entry_t> sorted;
@@ -349,28 +391,40 @@ void process_struct(output& ss, const TypeDef& type) {
     sorted.push_back(make_pair<string_view, const Field>(field.Name(), Field(field)));
   }
   sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
-
+  ss << "| Name | Type | Description |" << "\n" << "|---|---|---|" << "\n";
   for (auto const& field : sorted) {
     process_field(ss, field.second);
   }
 }
 
 void process_delegate(output& ss, const TypeDef& type) {
-  auto t = ss.StartType(type.TypeName(), "delegate");
+  const auto t = ss.StartType(type.TypeName(), "delegate");
   for (auto const& method : type.MethodList()) {
     if (method.SpecialName() && method.Name() == "Invoke") {
       process_method(ss, method);
     }
   }
 }
+
+map<string, vector<TypeDef>> interfaceImplementations{};
+
+
 void process_class(output& ss, const TypeDef& type, string kind) {
-  auto t = ss.StartType(type.TypeName(), kind);
+  const auto& className = string(type.TypeName());
+  const auto t = ss.StartType(className, kind);
   
-  auto extends = ToString(type.Extends());
+  const auto& extends = ToString(type.Extends());
   if (!extends.empty() && extends != "System.Object") {
     ss << "Extends: " + extends << "\n\n";
   }
-
+  if (kind == "interface" && interfaceImplementations.find(className) != interfaceImplementations.end())
+  {
+    ss << "Implemented by: \n";
+    for (auto const& imp : interfaceImplementations[className])
+    {
+      ss << "- " << typeToMarkdown(imp.TypeNamespace(), string(imp.TypeName()), true) << "\n";
+    }
+  }
   {
     int i = 0;
     for (auto const& ii : type.InterfaceImpl()) {
@@ -381,26 +435,32 @@ void process_class(output& ss, const TypeDef& type, string kind) {
         ss << ", ";
       }
       i++;
+      const auto& ifaceName = string(ii.Interface().TypeRef().TypeName());
       ss << ToString(ii.Interface());
+      interfaceImplementations[ifaceName].push_back(TypeDef(type));
     }
     ss << "\n\n";
   }
 
   {
-    auto ps = ss.StartSection("Properties");
     using entry_t = pair<string_view, const Property>;
     std::list<entry_t> sorted;
     for (auto const& prop: type.PropertyList()) {
       sorted.push_back(make_pair<string_view, const Property>(prop.Name(), Property(prop)));
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
-    for (auto const& prop : sorted) {
-      process_property(ss, prop.second);
+    if (!sorted.empty()) {
+      auto ps = ss.StartSection("Properties");
+      ss << "|   | Name|Type|Description|" << "\n"
+         << "|---|-----|----|-----------|" << "\n";
+      for (auto const& prop : sorted) {
+        process_property(ss, prop.second);
+      }
     }
   }
   ss << "\n";
   {
-    auto ms = ss.StartSection("Methods");
+
     using entry_t = pair<string_view, const MethodDef>;
     std::list<entry_t> sorted;
     for (auto const& method : type.MethodList()) {
@@ -408,22 +468,36 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
 
-    for (auto const& method : sorted) {
-      if (method.first == ctorName) {
-        process_method(ss, method.second, type.TypeName());
+    if (std::find_if(sorted.begin(), sorted.end(), [](auto const& x) { return x.first == ctorName; }) != sorted.end())
+    {
+      auto ms = ss.StartSection("Constructors");
+      for (auto const& method : sorted) {
+        if (method.second.SpecialName() && (method.first == ctorName)) {
+          process_method(ss, method.second, type.TypeName());
+        }
+        else {
+          continue;
+        }
       }
-      else if (method.second.SpecialName()) {
-        std::cout << "Skipping special method: " << string(method.second.Name()) << "\n";
-        continue; // get_ / put_ methods that are properties
-      }
-      else {
-        process_method(ss, method.second);
+    }
+    ss << "\n";
+    if (std::find_if(sorted.begin(), sorted.end(), [](auto const& x) { return !x.second.SpecialName(); }) != sorted.end())
+    {
+      auto ms = ss.StartSection("Methods");
+      for (auto const& method : sorted) {
+        if (method.second.SpecialName()) {
+          std::cout << "Skipping special method: " << string(method.second.Name()) << "\n";
+          continue; // get_ / put_ methods that are properties
+        }
+        else {
+          process_method(ss, method.second);
+        }
       }
     }
   }
+
   ss << "\n";
   {
-    auto es = ss.StartSection("Events");
     using entry_t = pair<string_view, const Event>;
     std::list<entry_t> sorted;
     for (auto const& evt : type.EventList()) {
@@ -431,10 +505,13 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
 
-    for (auto const& evt : sorted) {
-      auto n = evt.first;
-      auto ees = ss.StartSection("`" + string(evt.first) + "`");
-      ss << "Type: " << ToString(evt.second.EventType()) << "\n";
+    if (!sorted.empty()) {
+      auto es = ss.StartSection("Events");
+      for (auto const& evt : sorted) {
+        auto n = evt.first;
+        auto ees = ss.StartSection("`" + string(evt.first) + "`");
+        ss << "Type: " << ToString(evt.second.EventType()) << "\n";
+      }
     }
   }
 }
@@ -443,52 +520,73 @@ string link(string_view n) {
   return "- [" + code(n) + "](" + string(n) + ")";
 }
 
-void process(output& ss, string_view namespaceName, const cache::namespace_members& ns) {
-
+void write_index(string_view namespaceName, const cache::namespace_members& ns) {
   ofstream index("out/index.md");
   index << "# namespace " << namespaceName << "\n";
 
   index << "## Enums" << "\n";
   for (auto const& enumEntry : ns.enums) {
-    process_enum(ss, enumEntry);
     index << link(enumEntry.TypeName()) << "\n";
   }
 
   index << "## Interfaces" << "\n";
   for (auto const& interfaceEntry : ns.interfaces) {
-    process_class(ss, interfaceEntry, "interface");
     index << link(interfaceEntry.TypeName()) << "\n";
   }
 
   index << "## Structs" << "\n";
   for (auto const& structEntry : ns.structs) {
-    process_struct(ss, structEntry);
     index << link(structEntry.TypeName()) << "\n";
   }
 
   index << "## Classes" << "\n";
 
   for (auto const& classEntry : ns.classes) {
-    process_class(ss, classEntry, "class");
     index << link(classEntry.TypeName()) << "\n";
   }
 
   index << "## Delegates" << "\n";
   for (auto const& delegateEntry : ns.delegates) {
-    process_delegate(ss, delegateEntry);
     index << link(delegateEntry.TypeName()) << "\n";
   }
-
 }
 
-void write_index(output& ss, const pair<string_view, cache::namespace_members>& ns) {
-  ss.currentFile = std::ofstream("out/index.md");
-  auto start = ss.StartSection("namespace `" + string(ns.first) + "`");
-    for (auto const& t : ns.second.types) {
-      ss << "- [`" << t.first << "`]" << "(" << t.first << ")\n";
+bool shouldSkipInterface(const TypeDef& interfaceEntry) {
+#ifdef DEBUG
+  auto iname = interfaceEntry.TypeName();
+#endif
+  return hasAttribute(interfaceEntry.CustomAttribute(), "StaticAttribute") || 
+    hasAttribute(interfaceEntry.CustomAttribute(), "ExclusiveToAttribute");
+}
+
+void process(output& ss, string_view namespaceName, const cache::namespace_members& ns) {
+
+  for (auto const& enumEntry : ns.enums) {
+    process_enum(ss, enumEntry);
+  }
+
+  for (auto const& classEntry : ns.classes) {
+    process_class(ss, classEntry, "class");
+  }
+
+  for (auto const& interfaceEntry : ns.interfaces) {
+    if (!shouldSkipInterface(interfaceEntry)) {
+      process_class(ss, interfaceEntry, "interface");
     }
-  ss.currentFile.close();
+  }
+
+  for (auto const& structEntry : ns.structs) {
+    process_struct(ss, structEntry);
+  }
+
+
+  for (auto const& delegateEntry : ns.delegates) {
+    process_delegate(ss, delegateEntry);
+  }
+
+  write_index(namespaceName, ns);
 }
+
 int main(int argc, char** argv)
 {
   if (argc != 2) {

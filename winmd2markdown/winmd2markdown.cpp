@@ -486,7 +486,9 @@ void process_class(output& ss, const TypeDef& type, string kind) {
       auto ms = ss.StartSection("Methods");
       for (auto const& method : sorted) {
         if (method.second.SpecialName()) {
+#ifdef DEBUG
           std::cout << "Skipping special method: " << string(method.second.Name()) << "\n";
+#endif
           continue; // get_ / put_ methods that are properties
         }
         else {

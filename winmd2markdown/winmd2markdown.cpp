@@ -41,7 +41,7 @@ template<typename T> string GetContentAttributeValue(string attrname, const T& t
         auto const argname = arg.name;
         if (argname == "Content") {
           auto const argvalue = arg.value;
-          auto const elemSig = std::get<ElemSig>(argvalue.value);
+          auto const& elemSig = std::get<ElemSig>(argvalue.value);
           const string val{ std::get<string_view>(elemSig.value) };
 
           auto ret = boost::replace_all_copy(val, "\\n", "<br/>");

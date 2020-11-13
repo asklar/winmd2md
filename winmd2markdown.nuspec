@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+    <metadata>
+        <!-- Required elements-->
+        <id>winmd2markdown</id>
+        <version>$version$</version>
+        <description>Produces markdown documentation from Windows metadata files</description>
+        <authors>Alexander Sklar</authors>
+
+        <!-- Optional elements -->
+        <!-- ... -->
+    </metadata>
+    <files>
+        <file src="winmd2markdown\*.idl" target="build\" />
+        <file src="Release\winmd2markdown.exe" target="bin\" />
+    </files>
+</package>

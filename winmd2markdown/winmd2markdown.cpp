@@ -23,13 +23,33 @@ std::string code(std::string_view v) {
 
 bool hasAttribute(const pair<CustomAttribute, CustomAttribute>& attrs, string attr) {
   for (auto const& ca : attrs) {
-    if (ca.TypeNamespaceAndName().second == attr) {
+    auto const& tnn = ca.TypeNamespaceAndName();
+    if (tnn.second == attr) {
       return true;
     }
   }
   return false;
 }
 
+template<typename T>
+string GetDocString(const T& t) {
+  for (auto const& ca : t.CustomAttribute()) {
+    const auto tnn = ca.TypeNamespaceAndName();
+    if (tnn.second == "DocStringAttribute") {
+      auto const doc = ca.Value();
+      for (const auto& arg : doc.NamedArgs()) {
+        auto const argname = arg.name;
+        if (argname == "Content") {
+          auto const argvalue = arg.value;
+          auto const elemSig = std::get<ElemSig>(argvalue.value);
+          auto const val = std::get<string_view>(elemSig.value);
+          return string{ val };
+        }
+      }
+    }
+  }
+  return {};
+}
 
 struct output
 {
@@ -48,12 +68,13 @@ public:
     }
     indents = 0;
     std::filesystem::path out("out");
-    currentFile = std::ofstream(out / (std::string(name) + ".md"));
-    const auto title = string(kind) + " " + string(name);
+    const string filename = string(name) + ".md";
+    currentFile = std::ofstream(out / filename);
     currentFile << "---\n" <<
       "id: " << name << "\n" <<
-      "title: " << title<< "\n" <<
+      "title: " << name<< "\n" <<
       "---\n\n";
+    currentFile << "Kind: " << code(kind) << "\n\n";
     return type_helper(*this);
   }
 
@@ -100,6 +121,17 @@ template<typename T> output& operator<<(output& o, const T& t)
 {
   o.currentFile << t;
   return o;
+}
+
+template<typename T>
+void PrintOptionalDescription(output& o, const T& type)
+{
+  auto const doc = GetDocString(type);
+  if (!doc.empty())
+  {
+    auto _s = ss.StartSection("Description");
+    ss << doc << "\n\n";
+  }
 }
 
 std::string_view ToString(ElementType elementType) {
@@ -166,12 +198,13 @@ string GetNamespacePrefix(std::string_view ns)
 
 std::string typeToMarkdown(std::string_view ns, std::string type, bool toCode, string urlSuffix = "")
 {
+  constexpr auto Windows_namespace = "Windows.";
   string code = toCode ? "`" : "";
-  if (ns == "") return type; // basic type
+  if (ns.empty()) return type; // basic type
   else if (ns == currentNamespace) {
     return "[" + code + type + code + "](" + type + ")";
   }
-  else if (ns._Starts_with("Windows.")) {
+  else if (ns._Starts_with(Windows_namespace)) {
     // if it is a Windows type use MSDN, e.g.
     // https://docs.microsoft.com/uwp/api/Windows.UI.Xaml.Automation.ExpandCollapseState
     const std::string docsURL = "https://docs.microsoft.com/uwp/api/";
@@ -292,6 +325,7 @@ string GetType(const TypeSig& type) {
 
 void process_enum(output& ss, const TypeDef& type) {
   auto t = ss.StartType(type.TypeName(), "enum");
+  PrintOptionalDescription(ss, type);
   for (auto const& value : type.FieldList()) {
     if (value.Flags().SpecialName()) {
       continue;
@@ -312,13 +346,14 @@ MethodDef find_method(const TypeDef& type, string name) {
 DEFINE_ENUM_FLAG_OPERATORS(MemberAccess);
 
 
-void process_property(output& ss, const Property& prop, std::string description = {}) {
+void process_property(output& ss, const Property& prop) {
   const auto& type = GetType(prop.Type().Type());
   const auto& name = code(prop.Name());
 
   const auto& owningType = prop.Parent();
-  const auto& getter = find_method(owningType, "get_" + string(prop.Name()));
-  const auto& setter = find_method(owningType, "put_" + string(prop.Name()));
+  const auto propName = string(prop.Name());
+  const auto& getter = find_method(owningType, "get_" + propName);
+  const auto& setter = find_method(owningType, "put_" + propName);
   bool isStatic{ false };
   if ((getter && getter.Flags().Static()) || (setter && setter.Flags().Static())) {
     isStatic = true;
@@ -327,11 +362,11 @@ void process_property(output& ss, const Property& prop, std::string description 
   if (!setter || (setter.Flags().Access() & MemberAccess::Public) != MemberAccess::Public) {
     readonly = true;
   }
-
-  ss << "| " << (isStatic ? "static " : "") << (readonly ? "readonly " : "") << "| " <<name << " | " << type << " | " << description << " | \n";
+  auto description = GetDocString(prop);
+  ss << "| " << (isStatic ? (code("static") + "   ") : "") << (readonly ? (code("readonly") + " ") : "") << "| " << name << " | " << type << " | " << description << " | \n";
 }
 
-void process_method(output& ss, const MethodDef& method, string_view realName = "", string description = {}) {
+void process_method(output& ss, const MethodDef& method, string_view realName = "") {
   std::string returnType;
   const auto& signature = method.Signature();
   if (realName.empty()) {
@@ -346,9 +381,9 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
     }
   }
   const auto& flags = method.Flags();
-  const auto& name = realName.empty() ? method.Name() : realName;
+  const string_view name = realName.empty() ? method.Name() : realName;
   stringstream sstr;
-  sstr  << (flags.Static() ? code("static ") : "")
+  sstr  << (flags.Static() ? (code("static") + " ") : "")
 //    << (flags.Abstract() ? "abstract " : "")
     << returnType << " **" << code(name) << "**(";
 
@@ -358,7 +393,8 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
   for (auto const& p : method.ParamList()) {
     paramNames.push_back(p.Name());
   }
-  if (!paramNames.empty() && paramNames[0] == "result") {
+  constexpr auto resultParamName = "result";
+  if (!paramNames.empty() && paramNames[0] == resultParamName) {
     paramNames.erase(paramNames.begin());
   }
 
@@ -367,22 +403,32 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
       sstr << ", ";
     }
 
-    sstr << (param.ByRef() ? "**out** " : "") << GetType(param.Type()) << " " << paramNames[i];
+    const auto out = param.ByRef() ? "**out** " : "";
+    sstr << out << GetType(param.Type()) << " " << paramNames[i];
     i++;
   }
   sstr << ")";
-  ss << "- " << sstr.str() << "<br/>\n";
-  ss << description << "\n";
+  const std::string method_name = string{ name };
+  auto st = ss.StartSection(method_name);
+  ss << sstr.str() << "\n\n";
+
+  auto description = GetDocString(method);
+  ss << description << "\n\n";
 }
 
 
-void process_field(output& ss, const Field& field, string description = {}) {
+void process_field(output& ss, const Field& field) {
   const auto& type = GetType(field.Signature().Type());
-  ss << "| " << field.Name() << " | " << type << " | " << description << " |\n";
+  const auto& name = field.Name();
+  auto description = GetDocString(field);
+  ss << "| " << name << " | " << type << " | " << description << " |\n";
 }
 
 void process_struct(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "struct");
+  
+  PrintOptionalDescription(ss, type);
+
   const auto fs = ss.StartSection("Fields");
 
   using entry_t = pair<string_view, const Field>;
@@ -399,8 +445,11 @@ void process_struct(output& ss, const TypeDef& type) {
 
 void process_delegate(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "delegate");
+  PrintOptionalDescription(ss, type);
   for (auto const& method : type.MethodList()) {
-    if (method.SpecialName() && method.Name() == "Invoke") {
+    constexpr auto invokeName = "Invoke";
+    const auto& name = method.Name();
+    if (method.SpecialName() && name == invokeName) {
       process_method(ss, method);
     }
   }
@@ -441,6 +490,8 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     }
     ss << "\n\n";
   }
+
+  PrintOptionalDescription(ss, type);
 
   {
     using entry_t = pair<string_view, const Property>;

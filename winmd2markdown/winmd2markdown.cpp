@@ -46,8 +46,6 @@ template<typename T> string GetContentAttributeValue(string attrname, const T& t
 
           auto ret = boost::replace_all_copy(val, "\\n", "<br/>");
           return ret;
-          //return string{ val };// boost
-            //boost:: replace(val.begin(), val.end(), "\n", "<br/>");
         }
       }
     }

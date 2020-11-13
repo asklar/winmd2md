@@ -6,8 +6,9 @@
 #include <filesystem>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 #include <winmd_reader.h>
-#include <filesystem>
+#include <boost/algorithm/string/replace.hpp>
 
 using namespace std;
 using namespace winmd::reader;
@@ -30,25 +31,45 @@ bool hasAttribute(const pair<CustomAttribute, CustomAttribute>& attrs, string at
   }
   return false;
 }
-
-template<typename T>
-string GetDocString(const T& t) {
+template<typename T> string GetContentAttributeValue(string attrname, const T& t)
+{
   for (auto const& ca : t.CustomAttribute()) {
     const auto tnn = ca.TypeNamespaceAndName();
-    if (tnn.second == "DocStringAttribute") {
+    if (tnn.second == attrname) {
       auto const doc = ca.Value();
       for (const auto& arg : doc.NamedArgs()) {
         auto const argname = arg.name;
         if (argname == "Content") {
           auto const argvalue = arg.value;
           auto const elemSig = std::get<ElemSig>(argvalue.value);
-          auto const val = std::get<string_view>(elemSig.value);
-          return string{ val };
+          const string val{ std::get<string_view>(elemSig.value) };
+
+          auto ret = boost::replace_all_copy(val, "\\n", "<br/>");
+          return ret;
+          //return string{ val };// boost
+            //boost:: replace(val.begin(), val.end(), "\n", "<br/>");
         }
       }
     }
   }
   return {};
+}
+
+template<typename T>
+string GetDocString(const T& t) {
+  string val = GetContentAttributeValue("DocStringAttribute", t);
+  auto ret = boost::replace_all_copy(val, "\\n", "<br/>");
+  boost::replace_all(ret, "\r\n", "\n");
+  boost::replace_all(ret, "/-/", "//");
+  return ret;
+}
+
+template<typename T>
+string GetDocDefault(const T& t) {
+  string val = GetContentAttributeValue("DocDefaultAttribute", t);
+  if (val.empty()) return val;
+  auto ret = code(val);
+  return ret;
 }
 
 struct output
@@ -326,12 +347,14 @@ string GetType(const TypeSig& type) {
 void process_enum(output& ss, const TypeDef& type) {
   auto t = ss.StartType(type.TypeName(), "enum");
   PrintOptionalDescription(ss, type);
+
+  ss << "| Name |  Value | Description |\n" << "|--|--|--|\n";
   for (auto const& value : type.FieldList()) {
     if (value.Flags().SpecialName()) {
       continue;
     }
     uint32_t val = static_cast<uint32_t>((value.Signature().Type().element_type() == ElementType::U4) ? value.Constant().ValueUInt32() : value.Constant().ValueInt32());
-    ss << "    " << value.Name() << " = " << std::hex << "0x" << val << "\n";
+    ss << "|" << code(value.Name()) << " | " << std::hex << "0x" << val << "  |  " << GetDocString(value) << "|\n";
   }
 }
 
@@ -363,6 +386,10 @@ void process_property(output& ss, const Property& prop) {
     readonly = true;
   }
   auto description = GetDocString(prop);
+  auto default_val = GetDocDefault(prop);
+  if (!default_val.empty()) {
+    description += "<br/>default: " + default_val;
+  }
   ss << "| " << (isStatic ? (code("static") + "   ") : "") << (readonly ? (code("readonly") + " ") : "") << "| " << name << " | " << type << " | " << description << " | \n";
 }
 

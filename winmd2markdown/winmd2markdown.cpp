@@ -144,20 +144,26 @@ void PrintOptionalSections(output& ss, const T& type, std::optional<F> fallback_
     ss << "> **EXPERIMENTAL**\n\n";
   }
   auto depr = GetDeprecated(type);
-  if constexpr (!std::is_same<F, nullptr_t>())
+  constexpr bool isProperty = !std::is_same<F, nullptr_t>();
+  if constexpr (isProperty)
   {
     if (depr.empty()) depr = GetDeprecated(fallback_type.value());
   }
 
   if (!depr.empty()) {
-    ss << "**Important** this API is deprecated: " << depr << "\n\n";
+    ss << "**Deprecated**: " << depr << "\n\n";
   }
 
   auto const doc = GetDocString(type);
   if (!doc.empty())
   {
-    auto _s = ss.StartSection("Description");
-    ss << doc << "\n\n";
+    if constexpr (!isProperty) {
+      auto _s = ss.StartSection("Description");
+      ss << doc << "\n\n";
+    }
+    else {
+      ss << doc << "\n\n";
+    }
   }
 }
 
@@ -730,7 +736,7 @@ string getWindowsWinMd() {
     return (sdkRoot / g_opts->sdkVersion / "Windows.winmd").u8string();
   }
 
-  for (const auto& d : filesystem::directory_iterator()) {
+  for (const auto& d : filesystem::directory_iterator(sdkRoot)) {
     auto dirPath = d.path();
     filesystem::path winmd = dirPath / "Windows.winmd";
     if (filesystem::exists(winmd)) {

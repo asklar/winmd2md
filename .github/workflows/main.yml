@@ -25,14 +25,5 @@ jobs:
       - name: setup-msbuild
         uses: microsoft/setup-msbuild@v1
 
-      - name: Setup NuGet.exe for use with actions
-        # You may pin to the exact commit or the version.
-        # uses: NuGet/setup-nuget@255f46e14d51fbc603743e2aa2907954463fbeb9
-        uses: NuGet/setup-nuget@v1.0.2
-        
-      # Runs a single command using the runners shell
-      - name: nuget restore
-        run: nuget restore
-    
       - name: msbuild
-        run: msbuild /p:platform=x86,configuration=Debug
+        run: msbuild /p:platform=x86,configuration=Debug /restore /p:RestorePackagesConfig=true

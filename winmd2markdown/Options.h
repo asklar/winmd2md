@@ -24,12 +24,13 @@ struct options
   std::string fileSuffix{ "-api-windows" };
 
   options(const std::vector<std::string>& v) {
+    auto const opts = get_option_names();
     for (size_t i = 0; i < v.size(); i++) {
       const auto& o = v[i];
       if (o.empty()) continue;
       if (o[0] == '/' || o[0] == '-') {
-        auto const opt = std::find_if(get_option_names().cbegin(), get_option_names().cend(), [&o](auto&& x) { return x.name == o.c_str() + 1; });
-        if (opt != get_option_names().cend()) {
+        auto const opt = std::find_if(opts.cbegin(), opts.cend(), [&o](auto&& x) { return x.name == o.c_str() + 1; });
+        if (opt != opts.cend()) {
           if (opt->nArgs == 0) {
             opt->setter(this, {});
           }

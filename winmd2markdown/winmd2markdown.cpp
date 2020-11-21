@@ -163,19 +163,12 @@ void PrintOptionalSections(output& ss, const T& type, std::optional<F> fallback_
   }
 
   if (!depr.empty()) {
-    ss << "**Deprecated**: " << depr << "\n\n";
+    ss << "> **Deprecated**: " << depr << "\n\n";
   }
 
   auto const doc = GetDocString(type);
-  if (!doc.empty())
-  {
-    if constexpr (!isProperty) {
-      auto _s = ss.StartSection("Description");
-      ss << doc << "\n\n";
-    }
-    else {
-      ss << doc << "\n\n";
-    }
+  if (!doc.empty()) {
+    ss << doc << "\n\n";
   }
 }
 
@@ -412,13 +405,13 @@ void process_property(output& ss, const Property& prop) {
     readonly = true;
   }
 
-  auto description = GetDocString(prop);
   auto default_val = GetDocDefault(prop);
-  if (!default_val.empty()) {
-    description += "<br/>default: " + default_val;
-  }
   auto cppAttrs = (isStatic ? (code("static") + "   ") : "") + (readonly ? (code("readonly") + " ") : "");
   if (g_opts->propertiesAsTable) {
+    auto description = GetDocString(prop);
+    if (!default_val.empty()) {
+      description += "<br/>default: " + default_val;
+    }
     ss << "| " << cppAttrs << "| " << name << " | " << type << " | " << description << " | \n";
   }
   else {
@@ -477,16 +470,16 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
   auto st = ss.StartSection(method_name);
   ss << sstr.str() << "\n\n";
 
-  auto description = GetDocString(method);
-  ss << description << "\n\n";
+  PrintOptionalSections(ss, method);
+  ss << "\n\n";
 }
 
 
 void process_field(output& ss, const Field& field) {
   const auto& type = GetType(field.Signature().Type());
   const auto& name = string(field.Name());
-  auto description = GetDocString(field);
   if (g_opts->fieldsAsTable) {
+    auto description = GetDocString(field);
     ss << "| " << name << " | " << type << " | " << description << " |\n";
   }
   else {
@@ -503,7 +496,7 @@ void process_field(output& ss, const Field& field) {
       typeStr = GetType(tt);
     }
     ss << "Type: " << typeStr << "\n\n";
-    ss << description << "\n\n";
+    PrintOptionalSections(ss, field);
   }
 }
 

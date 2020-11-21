@@ -166,6 +166,10 @@ void PrintOptionalSections(output& ss, const T& type, std::optional<F> fallback_
     ss << "> **Deprecated**: " << depr << "\n\n";
   }
 
+  auto default_val = GetDocDefault(type);
+  if (!default_val.empty()) {
+    ss << "**Default value**: " << default_val << "\n\n";
+  }
   auto const doc = GetDocString(type);
   if (!doc.empty()) {
     ss << doc << "\n\n";
@@ -418,9 +422,7 @@ void process_property(output& ss, const Property& prop) {
     auto sec = ss.StartSection(propName);
     ss << cppAttrs << " " << type << " " << name << "\n\n";
     PrintOptionalSections(ss, prop, std::make_optional(getter));
-    if (!default_val.empty()) {
-      ss << "Default value: " << default_val << "\n\n";
-    }
+
   }
 }
 

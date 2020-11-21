@@ -17,12 +17,58 @@ string currentNamespace;
 string_view ObjectClassName = "Object"; // corresponds to IInspectable in C++/WinRT
 string_view ctorName = ".ctor";
 
+struct options;
+struct bool_option
+{
+  string name;
+  string description;
+  void (*setter)(options*);
+};
+extern std::vector<bool_option> option_names;
+
 struct options
 {
   bool outputExperimental{ false };
-  bool propertiesAsList{ false };
-  bool fieldsAsList{ false };
-} g_opts{};
+  bool propertiesAsTable{ false };
+  bool fieldsAsTable{ false };
+  bool help{ false };
+  std::string winMDPath;
+
+  options(const std::vector<string>& v) {
+    for (const auto& o : v) {
+      if (o.empty()) continue;
+      if (o[0] == '/' || o[0] == '-') {
+        auto const opt = std::find_if(option_names.cbegin(), option_names.cend(), [&o](auto&& x) { return x.name == o.c_str() + 1; });
+        if (opt != option_names.cend()) {
+          opt->setter(this);
+        }
+        else {
+          cerr << "Unknown option: " << o << "\n";
+          std::abort();
+        }
+      }
+      else {
+        if (winMDPath.empty()) {
+          winMDPath = o;
+        }
+        else {
+          cerr << "WinMD path already specified as " << winMDPath << " when we encountered " << o << "\n";
+          std::abort();
+        }
+      }
+    }
+  }
+} *g_opts{nullptr};
+
+#define OPTION_SETTER(x)    [](options* o) { o->x = true; }
+std::vector<bool_option> option_names = {
+  { "experimental", "Include APIs marked [experimental]", OPTION_SETTER(outputExperimental) },
+  { "propsAsTable", "Output Properties as a table", OPTION_SETTER(propertiesAsTable) },
+  { "fieldsAsTable", "Output Fields as a table", OPTION_SETTER(fieldsAsTable) },
+  { "?", "Display help", OPTION_SETTER(help) },
+  { "help", "Display help", OPTION_SETTER(help) },
+};
+
 
 std::string code(std::string_view v) {
   return "`" + string(v) + "`";
@@ -438,7 +484,7 @@ void process_property(output& ss, const Property& prop) {
     description += "<br/>default: " + default_val;
   }
   auto cppAttrs = (isStatic ? (code("static") + "   ") : "") + (readonly ? (code("readonly") + " ") : "");
-  if (g_opts.propertiesAsList) {
+  if (g_opts->propertiesAsTable) {
     ss << "| " << cppAttrs << "| " << name << " | " << type << " | " << description << " | \n";
   }
   else {
@@ -504,7 +550,7 @@ void process_field(output& ss, const Field& field) {
   const auto& type = GetType(field.Signature().Type());
   const auto& name = string(field.Name());
   auto description = GetDocString(field);
-  if (g_opts.fieldsAsList) {
+  if (g_opts->fieldsAsTable) {
     ss << "| " << name << " | " << type << " | " << description << " |\n";
   }
   else {
@@ -536,11 +582,11 @@ void process_struct(output& ss, const TypeDef& type) {
     sorted.push_back(make_pair<string_view, const Field>(field.Name(), Field(field)));
   }
   sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
-  if (g_opts.fieldsAsList) {
+  if (g_opts->fieldsAsTable) {
     ss << "| Name | Type | Description |" << "\n" << "|---|---|---|" << "\n";
   }
   for (auto const& field : sorted) {
-    if (!g_opts.outputExperimental && IsExperimental(field.second)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(field.second)) continue;
     process_field(ss, field.second);
   }
 }
@@ -553,7 +599,7 @@ void process_delegate(output& ss, const TypeDef& type) {
     constexpr auto invokeName = "Invoke";
     const auto& name = method.Name();
     if (method.SpecialName() && name == invokeName) {
-      if (!g_opts.outputExperimental && IsExperimental(method)) continue;
+      if (!g_opts->outputExperimental && IsExperimental(method)) continue;
       process_method(ss, method);
     }
   }
@@ -601,13 +647,13 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     using entry_t = pair<string_view, const Property>;
     std::list<entry_t> sorted;
     for (auto const& prop : type.PropertyList()) {
-      if (!g_opts.outputExperimental && IsExperimental(prop)) continue;
+      if (!g_opts->outputExperimental && IsExperimental(prop)) continue;
       sorted.push_back(make_pair<string_view, const Property>(prop.Name(), Property(prop)));
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
     if (!sorted.empty()) {
       auto ps = ss.StartSection("Properties");
-      if (g_opts.propertiesAsList) {
+      if (g_opts->propertiesAsTable) {
         ss << "|   | Name|Type|Description|" << "\n"
           << "|---|-----|----|-----------|" << "\n";
       }
@@ -622,7 +668,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     using entry_t = pair<string_view, const MethodDef>;
     std::list<entry_t> sorted;
     for (auto const& method : type.MethodList()) {
-      if (!g_opts.outputExperimental && IsExperimental(method)) continue;
+      if (!g_opts->outputExperimental && IsExperimental(method)) continue;
       sorted.push_back(make_pair<string_view, const MethodDef>(method.Name(), MethodDef(method)));
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
@@ -662,7 +708,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     using entry_t = pair<string_view, const Event>;
     std::list<entry_t> sorted;
     for (auto const& evt : type.EventList()) {
-      if (!g_opts.outputExperimental && IsExperimental(evt)) continue;
+      if (!g_opts->outputExperimental && IsExperimental(evt)) continue;
       sorted.push_back(make_pair<string_view, const Event>(evt.Name(), Event(evt)));
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
@@ -685,32 +731,32 @@ void write_index(string_view namespaceName, const cache::namespace_members& ns) 
 
   index << "## Enums" << "\n";
   for (auto const& t : ns.enums) {
-    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(t)) continue;
     index << link(t.TypeName()) << "\n";
   }
 
   index << "## Interfaces" << "\n";
   for (auto const& t : ns.interfaces) {
-    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(t)) continue;
     index << link(t.TypeName()) << "\n";
   }
 
   index << "## Structs" << "\n";
   for (auto const& t : ns.structs) {
-    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(t)) continue;
     index << link(t.TypeName()) << "\n";
   }
 
   index << "## Classes" << "\n";
 
   for (auto const& t : ns.classes) {
-    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(t)) continue;
     index << link(t.TypeName()) << "\n";
   }
 
   index << "## Delegates" << "\n";
   for (auto const& t : ns.delegates) {
-    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(t)) continue;
     index << link(t.TypeName()) << "\n";
   }
 }
@@ -719,7 +765,7 @@ bool shouldSkipInterface(const TypeDef& interfaceEntry) {
 #ifdef DEBUG
   auto iname = interfaceEntry.TypeName();
 #endif
-  if (!g_opts.outputExperimental && IsExperimental(interfaceEntry)) return true;
+  if (!g_opts->outputExperimental && IsExperimental(interfaceEntry)) return true;
 
   return hasAttribute(interfaceEntry.CustomAttribute(), "StaticAttribute") ||
     hasAttribute(interfaceEntry.CustomAttribute(), "ExclusiveToAttribute");
@@ -728,12 +774,12 @@ bool shouldSkipInterface(const TypeDef& interfaceEntry) {
 void process(output& ss, string_view namespaceName, const cache::namespace_members& ns) {
 
   for (auto const& enumEntry : ns.enums) {
-    if (!g_opts.outputExperimental && IsExperimental(enumEntry)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(enumEntry)) continue;
     process_enum(ss, enumEntry);
   }
 
   for (auto const& classEntry : ns.classes) {
-    if (!g_opts.outputExperimental && IsExperimental(classEntry)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(classEntry)) continue;
     process_class(ss, classEntry, "class");
   }
 
@@ -744,28 +790,39 @@ void process(output& ss, string_view namespaceName, const cache::namespace_membe
   }
 
   for (auto const& structEntry : ns.structs) {
-    if (!g_opts.outputExperimental && IsExperimental(structEntry)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(structEntry)) continue;
     process_struct(ss, structEntry);
   }
 
 
   for (auto const& delegateEntry : ns.delegates) {
-    if (!g_opts.outputExperimental && IsExperimental(delegateEntry)) continue;
+    if (!g_opts->outputExperimental && IsExperimental(delegateEntry)) continue;
     process_delegate(ss, delegateEntry);
   }
 
   write_index(namespaceName, ns);
 }
 
+
+void PrintHelp(string name) {
+  cerr << "Usage: " << name << " [options] pathToMetadata.winmd\n\n";
+  cerr << "Options:\n";
+  for (const auto& o : option_names) {
+    cerr << "\t" << setw(14) << o.name << "\t" << o.description << "\n";
+  }
+}
 int main(int argc, char** argv)
 {
-  if (argc != 2) {
-    cerr << "Usage: " << argv[0] << " pathToMetadata.winmd";
+  if (argc < 2) {
+    PrintHelp(argv[0]);
     return -1;
   }
-
-  std::string winmdPath(argv[1]);
-  cache cache(winmdPath);
+  g_opts = new options(std::vector<string>(argv + 1, argv + argc));
+  if (g_opts->help) {
+    PrintHelp(argv[0]);
+    return 0;
+  }
+  cache cache(g_opts->winMDPath);
   output o;
   // ostream& ss = cout;
   for (auto const& namespaceEntry : cache.namespaces()) {

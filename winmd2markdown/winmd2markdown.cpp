@@ -17,6 +17,12 @@ string currentNamespace;
 string_view ObjectClassName = "Object"; // corresponds to IInspectable in C++/WinRT
 string_view ctorName = ".ctor";
 
+struct options
+{
+  bool outputExperimental{ false };
+  bool propertiesAsList{ false };
+  bool fieldsAsList{ false };
+} g_opts{};
 
 std::string code(std::string_view v) {
   return "`" + string(v) + "`";
@@ -31,6 +37,34 @@ bool hasAttribute(const pair<CustomAttribute, CustomAttribute>& attrs, string at
   }
   return false;
 }
+
+//bool IsBuiltInType(string_view n) {
+//
+//  constexpr std::vector<string> builtInTypes = {
+//    "void",
+//    "bool",
+//    "int????",
+//    "int8_t",
+//    "short",
+//    "int",
+//    "int64_t",
+//    "uint8_t",
+//    "uint16_t",
+//    "uint32_t",
+//    "uint64_t",
+//    "float",
+//    "double",
+//    "string",
+//  };
+//
+//  return std::find(builtInTypes.begin(), builtInTypes.end(), n);
+//}
+
+string link(string_view n) {
+  //if (IsBuiltInType(n)) return string(n);
+  return "- [" + code(n) + "](" + string(n) + ")";
+}
+
 template<typename T> string GetContentAttributeValue(string attrname, const T& t)
 {
   for (auto const& ca : t.CustomAttribute()) {
@@ -91,7 +125,7 @@ public:
     currentFile = std::ofstream(out / filename);
     currentFile << "---\n" <<
       "id: " << name << "\n" <<
-      "title: " << name<< "\n" <<
+      "title: " << name << "\n" <<
       "---\n\n";
     currentFile << "Kind: " << code(kind) << "\n\n";
     return type_helper(*this);
@@ -150,6 +184,20 @@ void PrintOptionalDescription(output& ss, const T& type)
   {
     auto _s = ss.StartSection("Description");
     ss << doc << "\n\n";
+  }
+}
+
+template<typename T>
+bool IsExperimental(const T& type)
+{
+  return hasAttribute(type.CustomAttribute(), "ExperimentalAttribute");
+}
+
+template<typename T>
+void PrintOptionalExperimental(output& ss, const T& type)
+{
+  if (IsExperimental(type)) {
+    ss << "> **EXPERIMENTAL**\n\n";
   }
 }
 
@@ -302,7 +350,7 @@ string GetType(const TypeSig::value_type& valueType)
     ss << typeToMarkdown(genericType.TypeRef().TypeNamespace(), prettyOuterType, true, "-" + std::to_string(gt.GenericArgCount())) << '<';
 
     bool first = true;
-    
+
     for (const auto& arg : gt.GenericArgs()) {
       if (!first) {
         ss << ", ";
@@ -344,6 +392,7 @@ string GetType(const TypeSig& type) {
 
 void process_enum(output& ss, const TypeDef& type) {
   auto t = ss.StartType(type.TypeName(), "enum");
+  PrintOptionalExperimental(ss, type);
   PrintOptionalDescription(ss, type);
 
   ss << "| Name |  Value | Description |\n" << "|--|--|--|\n";
@@ -388,7 +437,16 @@ void process_property(output& ss, const Property& prop) {
   if (!default_val.empty()) {
     description += "<br/>default: " + default_val;
   }
-  ss << "| " << (isStatic ? (code("static") + "   ") : "") << (readonly ? (code("readonly") + " ") : "") << "| " << name << " | " << type << " | " << description << " | \n";
+  auto cppAttrs = (isStatic ? (code("static") + "   ") : "") + (readonly ? (code("readonly") + " ") : "");
+  if (g_opts.propertiesAsList) {
+    ss << "| " << cppAttrs << "| " << name << " | " << type << " | " << description << " | \n";
+  }
+  else {
+    auto sec = ss.StartSection(propName);
+    ss << cppAttrs << " " << type << " " << name << "\n\n";
+    PrintOptionalExperimental(ss, prop);
+    ss << description << "\n\n";
+  }
 }
 
 void process_method(output& ss, const MethodDef& method, string_view realName = "") {
@@ -408,8 +466,8 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
   const auto& flags = method.Flags();
   const string_view name = realName.empty() ? method.Name() : realName;
   stringstream sstr;
-  sstr  << (flags.Static() ? (code("static") + " ") : "")
-//    << (flags.Abstract() ? "abstract " : "")
+  sstr << (flags.Static() ? (code("static") + " ") : "")
+    //    << (flags.Abstract() ? "abstract " : "")
     << returnType << " **" << code(name) << "**(";
 
   int i = 0;
@@ -444,14 +502,21 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
 
 void process_field(output& ss, const Field& field) {
   const auto& type = GetType(field.Signature().Type());
-  const auto& name = field.Name();
+  const auto& name = string(field.Name());
   auto description = GetDocString(field);
-  ss << "| " << name << " | " << type << " | " << description << " |\n";
+  if (g_opts.fieldsAsList) {
+    ss << "| " << name << " | " << type << " | " << description << " |\n";
+  }
+  else {
+    auto sec = ss.StartSection(name);
+    ss << "Type: " << code(type) << "\n\n";
+    ss << description << "\n\n";
+  }
 }
 
 void process_struct(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "struct");
-  
+  PrintOptionalExperimental(ss, type);
   PrintOptionalDescription(ss, type);
 
   const auto fs = ss.StartSection("Fields");
@@ -462,19 +527,24 @@ void process_struct(output& ss, const TypeDef& type) {
     sorted.push_back(make_pair<string_view, const Field>(field.Name(), Field(field)));
   }
   sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
-  ss << "| Name | Type | Description |" << "\n" << "|---|---|---|" << "\n";
+  if (g_opts.fieldsAsList) {
+    ss << "| Name | Type | Description |" << "\n" << "|---|---|---|" << "\n";
+  }
   for (auto const& field : sorted) {
+    if (!g_opts.outputExperimental && IsExperimental(field.second)) continue;
     process_field(ss, field.second);
   }
 }
 
 void process_delegate(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "delegate");
+  PrintOptionalExperimental(ss, type);
   PrintOptionalDescription(ss, type);
   for (auto const& method : type.MethodList()) {
     constexpr auto invokeName = "Invoke";
     const auto& name = method.Name();
     if (method.SpecialName() && name == invokeName) {
+      if (!g_opts.outputExperimental && IsExperimental(method)) continue;
       process_method(ss, method);
     }
   }
@@ -486,7 +556,7 @@ map<string, vector<TypeDef>> interfaceImplementations{};
 void process_class(output& ss, const TypeDef& type, string kind) {
   const auto& className = string(type.TypeName());
   const auto t = ss.StartType(className, kind);
-  
+
   const auto& extends = ToString(type.Extends());
   if (!extends.empty() && extends != "System.Object") {
     ss << "Extends: " + extends << "\n\n";
@@ -515,20 +585,23 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     }
     ss << "\n\n";
   }
-
+  PrintOptionalExperimental(ss, type);
   PrintOptionalDescription(ss, type);
 
   {
     using entry_t = pair<string_view, const Property>;
     std::list<entry_t> sorted;
-    for (auto const& prop: type.PropertyList()) {
+    for (auto const& prop : type.PropertyList()) {
+      if (!g_opts.outputExperimental && IsExperimental(prop)) continue;
       sorted.push_back(make_pair<string_view, const Property>(prop.Name(), Property(prop)));
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
     if (!sorted.empty()) {
       auto ps = ss.StartSection("Properties");
-      ss << "|   | Name|Type|Description|" << "\n"
-         << "|---|-----|----|-----------|" << "\n";
+      if (g_opts.propertiesAsList) {
+        ss << "|   | Name|Type|Description|" << "\n"
+          << "|---|-----|----|-----------|" << "\n";
+      }
       for (auto const& prop : sorted) {
         process_property(ss, prop.second);
       }
@@ -540,6 +613,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     using entry_t = pair<string_view, const MethodDef>;
     std::list<entry_t> sorted;
     for (auto const& method : type.MethodList()) {
+      if (!g_opts.outputExperimental && IsExperimental(method)) continue;
       sorted.push_back(make_pair<string_view, const MethodDef>(method.Name(), MethodDef(method)));
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
@@ -579,6 +653,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     using entry_t = pair<string_view, const Event>;
     std::list<entry_t> sorted;
     for (auto const& evt : type.EventList()) {
+      if (!g_opts.outputExperimental && IsExperimental(evt)) continue;
       sorted.push_back(make_pair<string_view, const Event>(evt.Name(), Event(evt)));
     }
     sorted.sort([](const entry_t& x, const entry_t& y) { return x.first < y.first; });
@@ -594,38 +669,40 @@ void process_class(output& ss, const TypeDef& type, string kind) {
   }
 }
 
-string link(string_view n) {
-  return "- [" + code(n) + "](" + string(n) + ")";
-}
 
 void write_index(string_view namespaceName, const cache::namespace_members& ns) {
   ofstream index("out/index.md");
   index << "# namespace " << namespaceName << "\n";
 
   index << "## Enums" << "\n";
-  for (auto const& enumEntry : ns.enums) {
-    index << link(enumEntry.TypeName()) << "\n";
+  for (auto const& t : ns.enums) {
+    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    index << link(t.TypeName()) << "\n";
   }
 
   index << "## Interfaces" << "\n";
-  for (auto const& interfaceEntry : ns.interfaces) {
-    index << link(interfaceEntry.TypeName()) << "\n";
+  for (auto const& t : ns.interfaces) {
+    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    index << link(t.TypeName()) << "\n";
   }
 
   index << "## Structs" << "\n";
-  for (auto const& structEntry : ns.structs) {
-    index << link(structEntry.TypeName()) << "\n";
+  for (auto const& t : ns.structs) {
+    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    index << link(t.TypeName()) << "\n";
   }
 
   index << "## Classes" << "\n";
 
-  for (auto const& classEntry : ns.classes) {
-    index << link(classEntry.TypeName()) << "\n";
+  for (auto const& t : ns.classes) {
+    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    index << link(t.TypeName()) << "\n";
   }
 
   index << "## Delegates" << "\n";
-  for (auto const& delegateEntry : ns.delegates) {
-    index << link(delegateEntry.TypeName()) << "\n";
+  for (auto const& t : ns.delegates) {
+    if (!g_opts.outputExperimental && IsExperimental(t)) continue;
+    index << link(t.TypeName()) << "\n";
   }
 }
 
@@ -633,17 +710,21 @@ bool shouldSkipInterface(const TypeDef& interfaceEntry) {
 #ifdef DEBUG
   auto iname = interfaceEntry.TypeName();
 #endif
-  return hasAttribute(interfaceEntry.CustomAttribute(), "StaticAttribute") || 
+  if (!g_opts.outputExperimental && IsExperimental(interfaceEntry)) return true;
+
+  return hasAttribute(interfaceEntry.CustomAttribute(), "StaticAttribute") ||
     hasAttribute(interfaceEntry.CustomAttribute(), "ExclusiveToAttribute");
 }
 
 void process(output& ss, string_view namespaceName, const cache::namespace_members& ns) {
 
   for (auto const& enumEntry : ns.enums) {
+    if (!g_opts.outputExperimental && IsExperimental(enumEntry)) continue;
     process_enum(ss, enumEntry);
   }
 
   for (auto const& classEntry : ns.classes) {
+    if (!g_opts.outputExperimental && IsExperimental(classEntry)) continue;
     process_class(ss, classEntry, "class");
   }
 
@@ -654,11 +735,13 @@ void process(output& ss, string_view namespaceName, const cache::namespace_membe
   }
 
   for (auto const& structEntry : ns.structs) {
+    if (!g_opts.outputExperimental && IsExperimental(structEntry)) continue;
     process_struct(ss, structEntry);
   }
 
 
   for (auto const& delegateEntry : ns.delegates) {
+    if (!g_opts.outputExperimental && IsExperimental(delegateEntry)) continue;
     process_delegate(ss, delegateEntry);
   }
 

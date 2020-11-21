@@ -509,7 +509,16 @@ void process_field(output& ss, const Field& field) {
   }
   else {
     auto sec = ss.StartSection(name);
-    ss << "Type: " << code(type) << "\n\n";
+    auto tt = field.Signature().Type().Type();
+    auto et = std::get_if<ElementType>(&tt);
+    string typeStr{};
+    if (et) {
+      typeStr = code(type);
+    }
+    else {
+      typeStr = GetType(tt);
+    }
+    ss << "Type: " << typeStr << "\n\n";
     ss << description << "\n\n";
   }
 }

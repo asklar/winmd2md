@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <winmd_reader.h>
 #include <boost/algorithm/string/replace.hpp>
-
+#include "output.h"
+#include "Options.h"
+#include "Format.h"
 using namespace std;
 using namespace winmd::reader;
 
@@ -17,62 +19,6 @@ string currentNamespace;
 string_view ObjectClassName = "Object"; // corresponds to IInspectable in C++/WinRT
 string_view ctorName = ".ctor";
 
-struct options;
-struct bool_option
-{
-  string name;
-  string description;
-  void (*setter)(options*);
-};
-extern std::vector<bool_option> option_names;
-
-struct options
-{
-  bool outputExperimental{ false };
-  bool propertiesAsTable{ false };
-  bool fieldsAsTable{ false };
-  bool help{ false };
-  std::string winMDPath;
-
-  options(const std::vector<string>& v) {
-    for (const auto& o : v) {
-      if (o.empty()) continue;
-      if (o[0] == '/' || o[0] == '-') {
-        auto const opt = std::find_if(option_names.cbegin(), option_names.cend(), [&o](auto&& x) { return x.name == o.c_str() + 1; });
-        if (opt != option_names.cend()) {
-          opt->setter(this);
-        }
-        else {
-          cerr << "Unknown option: " << o << "\n";
-          std::abort();
-        }
-      }
-      else {
-        if (winMDPath.empty()) {
-          winMDPath = o;
-        }
-        else {
-          cerr << "WinMD path already specified as " << winMDPath << " when we encountered " << o << "\n";
-          std::abort();
-        }
-      }
-    }
-  }
-} *g_opts{nullptr};
-
-#define OPTION_SETTER(x)    [](options* o) { o->x = true; }
-std::vector<bool_option> option_names = {
-  { "experimental", "Include APIs marked [experimental]", OPTION_SETTER(outputExperimental) },
-  { "propsAsTable", "Output Properties as a table", OPTION_SETTER(propertiesAsTable) },
-  { "fieldsAsTable", "Output Fields as a table", OPTION_SETTER(fieldsAsTable) },
-  { "?", "Display help", OPTION_SETTER(help) },
-  { "help", "Display help", OPTION_SETTER(help) },
-};
-
-
-std::string code(std::string_view v) {
-  return "`" + string(v) + "`";
-}
 
 bool hasAttribute(const pair<CustomAttribute, CustomAttribute>& attrs, string attr) {
   for (auto const& ca : attrs) {
@@ -115,6 +61,7 @@ template<typename T> string GetContentAttributeValue(string attrname, const T& t
 {
   for (auto const& ca : t.CustomAttribute()) {
     const auto tnn = ca.TypeNamespaceAndName();
+    const auto customAttrName = tnn.second;
     if (tnn.second == attrname) {
       auto const doc = ca.Value();
       for (const auto& arg : doc.NamedArgs()) {
@@ -150,71 +97,6 @@ string GetDocDefault(const T& t) {
   return ret;
 }
 
-struct output
-{
-private:
-  struct type_helper;
-  struct section_helper;
-public:
-  output() {
-    std::error_code ec;
-    std::filesystem::create_directory("out", ec); // ignore ec
-  }
-  std::ofstream currentFile;
-  type_helper StartType(std::string_view name, std::string_view kind) {
-    if (currentFile.is_open()) {
-      EndType();
-    }
-    indents = 0;
-    std::filesystem::path out("out");
-    const string filename = string(name) + ".md";
-    currentFile = std::ofstream(out / filename);
-    currentFile << "---\n" <<
-      "id: " << name << "\n" <<
-      "title: " << name << "\n" <<
-      "---\n\n";
-    currentFile << "Kind: " << code(kind) << "\n\n";
-    return type_helper(*this);
-  }
-
-  section_helper StartSection(const std::string& a) {
-    return section_helper(*this, a);
-  }
-  template<typename T>
-  friend output& operator<<(output& o, const T& t);
-
-private:
-  int indents = 0;
-  void EndSection() {
-    indents--;
-  }
-  void EndType() {
-    currentFile.flush();
-    currentFile.close();
-  }
-  friend struct type_helper;
-  struct section_helper {
-    output& o;
-    section_helper(output& out, string s) : o(out) {
-      o.indents++;
-      if (!s.empty()) {
-        string t(o.indents, '#');
-        o << t << " " << s << "\n";
-      }
-    }
-    ~section_helper() {
-      o.indents--;
-    }
-  };
-  struct type_helper {
-    output& o;
-    section_helper sh;
-    type_helper(output& out) : o(out), sh(o.StartSection("")) {};
-    ~type_helper() {
-      o.EndType();
-    }
-  };
-};
 
 template<typename T> output& operator<<(output& o, const T& t)
 {
@@ -222,16 +104,6 @@ template<typename T> output& operator<<(output& o, const T& t)
   return o;
 }
 
-template<typename T>
-void PrintOptionalDescription(output& ss, const T& type)
-{
-  auto const doc = GetDocString(type);
-  if (!doc.empty())
-  {
-    auto _s = ss.StartSection("Description");
-    ss << doc << "\n\n";
-  }
-}
 
 template<typename T>
 bool IsExperimental(const T& type)
@@ -240,10 +112,52 @@ bool IsExperimental(const T& type)
 }
 
 template<typename T>
-void PrintOptionalExperimental(output& ss, const T& type)
+string GetDeprecated(const T& type)
+{
+  for (auto const& ca : type.CustomAttribute()) {
+    const auto tnn = ca.TypeNamespaceAndName();
+    const auto customAttrName = tnn.second;
+    if (tnn.second == "DeprecatedAttribute") {
+      auto const depr = ca.Value();
+      const std::vector<winmd::reader::FixedArgSig>& args = depr.FixedArgs();
+      auto const argvalue = args[0].value;
+      auto const& elemSig = std::get<ElemSig>(argvalue);
+      const string val{ std::get<string_view>(elemSig.value) };
+      return val;
+    }
+  }
+  return {};
+}
+
+/// <summary>
+/// Prints information that may be missing, e.g. description, whether the type is experimental or not, whether it's deprecated
+/// For properties, custom attributes can live in the getter/setter method instead of the property itself.
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="ss"></param>
+/// <param name="type"></param>
+/// <param name="fallback_type"></param>
+template<typename T, typename F = nullptr_t>
+void PrintOptionalSections(output& ss, const T& type, std::optional<F> fallback_type = std::nullopt)
 {
   if (IsExperimental(type)) {
     ss << "> **EXPERIMENTAL**\n\n";
+  }
+  auto depr = GetDeprecated(type);
+  if constexpr (!std::is_same<F, nullptr_t>())
+  {
+    if (depr.empty()) depr = GetDeprecated(fallback_type.value());
+  }
+
+  if (!depr.empty()) {
+    ss << "**Important** this API is deprecated: " << depr << "\n\n";
+  }
+
+  auto const doc = GetDocString(type);
+  if (!doc.empty())
+  {
+    auto _s = ss.StartSection("Description");
+    ss << doc << "\n\n";
   }
 }
 
@@ -438,8 +352,7 @@ string GetType(const TypeSig& type) {
 
 void process_enum(output& ss, const TypeDef& type) {
   auto t = ss.StartType(type.TypeName(), "enum");
-  PrintOptionalExperimental(ss, type);
-  PrintOptionalDescription(ss, type);
+  PrintOptionalSections(ss, type);
 
   ss << "| Name |  Value | Description |\n" << "|--|--|--|\n";
   for (auto const& value : type.FieldList()) {
@@ -471,13 +384,16 @@ void process_property(output& ss, const Property& prop) {
   const auto& getter = find_method(owningType, "get_" + propName);
   const auto& setter = find_method(owningType, "put_" + propName);
   bool isStatic{ false };
+
   if ((getter && getter.Flags().Static()) || (setter && setter.Flags().Static())) {
     isStatic = true;
   }
+
   bool readonly{ false };
   if (!setter || (setter.Flags().Access() & MemberAccess::Public) != MemberAccess::Public) {
     readonly = true;
   }
+
   auto description = GetDocString(prop);
   auto default_val = GetDocDefault(prop);
   if (!default_val.empty()) {
@@ -490,8 +406,10 @@ void process_property(output& ss, const Property& prop) {
   else {
     auto sec = ss.StartSection(propName);
     ss << cppAttrs << " " << type << " " << name << "\n\n";
-    PrintOptionalExperimental(ss, prop);
-    ss << description << "\n\n";
+    PrintOptionalSections(ss, prop, std::make_optional(getter));
+    if (!default_val.empty()) {
+      ss << "Default value: " << default_val << "\n\n";
+    }
   }
 }
 
@@ -555,7 +473,9 @@ void process_field(output& ss, const Field& field) {
   }
   else {
     auto sec = ss.StartSection(name);
-    auto tt = field.Signature().Type().Type();
+    auto s = field.Signature();
+    auto st = s.Type();
+    auto tt = st.Type();
     auto et = std::get_if<ElementType>(&tt);
     string typeStr{};
     if (et) {
@@ -571,8 +491,7 @@ void process_field(output& ss, const Field& field) {
 
 void process_struct(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "struct");
-  PrintOptionalExperimental(ss, type);
-  PrintOptionalDescription(ss, type);
+  PrintOptionalSections(ss, type);
 
   const auto fs = ss.StartSection("Fields");
 
@@ -593,8 +512,7 @@ void process_struct(output& ss, const TypeDef& type) {
 
 void process_delegate(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "delegate");
-  PrintOptionalExperimental(ss, type);
-  PrintOptionalDescription(ss, type);
+  PrintOptionalSections(ss, type);
   for (auto const& method : type.MethodList()) {
     constexpr auto invokeName = "Invoke";
     const auto& name = method.Name();
@@ -640,8 +558,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     }
     ss << "\n\n";
   }
-  PrintOptionalExperimental(ss, type);
-  PrintOptionalDescription(ss, type);
+  PrintOptionalSections(ss, type);
 
   {
     using entry_t = pair<string_view, const Property>;
@@ -803,12 +720,33 @@ void process(output& ss, string_view namespaceName, const cache::namespace_membe
   write_index(namespaceName, ns);
 }
 
+string getWindowsWinMd() {
+  // The root location for Windows SDKs is stored in HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Kits\Installed Roots
+  // under KitsRoot10
+  // But it should be ok to check the default path for most cases
+
+  const filesystem::path sdkRoot = "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata";
+  if (!g_opts->sdkVersion.empty()) {
+    return (sdkRoot / g_opts->sdkVersion / "Windows.winmd").u8string();
+  }
+
+  for (const auto& d : filesystem::directory_iterator()) {
+    auto dirPath = d.path();
+    filesystem::path winmd = dirPath / "Windows.winmd";
+    if (filesystem::exists(winmd)) {
+      return winmd.u8string();
+    }
+  }
+
+  throw std::invalid_argument("Couldn't find Windows.winmd");
+}
 
 void PrintHelp(string name) {
+  cerr << "https://github.com/asklar/winmd2md" << "\n";
   cerr << "Usage: " << name << " [options] pathToMetadata.winmd\n\n";
   cerr << "Options:\n";
-  for (const auto& o : option_names) {
-    cerr << "\t" << setw(14) << o.name << "\t" << o.description << "\n";
+  for (const auto& o : get_option_names()) {
+    cerr << "\t" << setw(14) << "/" << o.name << "\t" << o.description << "\n";
   }
 }
 int main(int argc, char** argv)
@@ -822,11 +760,21 @@ int main(int argc, char** argv)
     PrintHelp(argv[0]);
     return 0;
   }
-  cache cache(g_opts->winMDPath);
+
+  auto windows_winmd = getWindowsWinMd();
+
+  std::vector<string> files = {
+    windows_winmd,
+    g_opts->winMDPath,
+  };
+  cache cache(files);
+  
   output o;
   // ostream& ss = cout;
   for (auto const& namespaceEntry : cache.namespaces()) {
+
     cout << "namespace " << namespaceEntry.first << endl;
+    if (namespaceEntry.first._Starts_with("Windows.")) continue;
     filesystem::path nsPath(namespaceEntry.first);
     filesystem::create_directory(nsPath);
     filesystem::current_path(nsPath);

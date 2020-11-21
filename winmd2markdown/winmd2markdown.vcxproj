@@ -144,10 +144,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Options.cpp" />
+    <ClCompile Include="output.cpp" />
     <ClCompile Include="winmd2markdown.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Format.h" />
+    <ClInclude Include="Options.h" />
+    <ClInclude Include="output.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

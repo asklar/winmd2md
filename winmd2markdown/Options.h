@@ -21,6 +21,7 @@ struct options
   bool help{ false };
   std::string sdkVersion;
   std::string winMDPath;
+  std::string fileSuffix{ "-api-windows" };
 
   options(const std::vector<std::string>& v) {
     for (size_t i = 0; i < v.size(); i++) {

@@ -19,6 +19,7 @@ string currentNamespace;
 string_view ObjectClassName = "Object"; // corresponds to IInspectable in C++/WinRT
 string_view ctorName = ".ctor";
 
+std::unique_ptr<winmd::reader::cache> g_cache{ nullptr };
 
 bool hasAttribute(const pair<CustomAttribute, CustomAttribute>& attrs, string attr) {
   for (auto const& ca : attrs) {
@@ -127,6 +128,17 @@ string GetDeprecated(const T& type)
     }
   }
   return {};
+}
+
+template<typename IT>
+bool shouldSkipInterface(const IT /*TypeDef*/& interfaceEntry) {
+#ifdef DEBUG
+  auto iname = interfaceEntry.TypeName();
+#endif
+  if (!g_opts->outputExperimental && IsExperimental(interfaceEntry)) return true;
+
+  return hasAttribute(interfaceEntry.CustomAttribute(), "StaticAttribute") ||
+    hasAttribute(interfaceEntry.CustomAttribute(), "ExclusiveToAttribute");
 }
 
 /// <summary>
@@ -551,6 +563,12 @@ void process_class(output& ss, const TypeDef& type, string kind) {
   {
     int i = 0;
     for (auto const& ii : type.InterfaceImpl()) {
+      const auto& tr = ii.Interface().TypeRef();
+      const auto& ifaceName = string(tr.TypeName());
+
+      const auto& td = g_cache->find(tr.TypeNamespace(), tr.TypeName());
+      if (shouldSkipInterface(td)) continue;
+
       if (i == 0) {
         ss << "Implements: ";
       }
@@ -558,7 +576,6 @@ void process_class(output& ss, const TypeDef& type, string kind) {
         ss << ", ";
       }
       i++;
-      const auto& ifaceName = string(ii.Interface().TypeRef().TypeName());
       ss << ToString(ii.Interface());
       interfaceImplementations[ifaceName].push_back(TypeDef(type));
     }
@@ -649,8 +666,15 @@ void process_class(output& ss, const TypeDef& type, string kind) {
 
 
 void write_index(string_view namespaceName, const cache::namespace_members& ns) {
-  ofstream index("out/index.md");
-  index << "# namespace " << namespaceName << "\n";
+  ofstream index("out/index" + g_opts->fileSuffix + ".md");
+
+  index << R"(---
+id: Native-API-Reference
+title: namespace )" << namespaceName << R"(
+sidebar_label: Full reference
+---
+
+)";
 
   index << "## Enums" << "\n";
   for (auto const& t : ns.enums) {
@@ -661,6 +685,7 @@ void write_index(string_view namespaceName, const cache::namespace_members& ns) 
   index << "## Interfaces" << "\n";
   for (auto const& t : ns.interfaces) {
     if (!g_opts->outputExperimental && IsExperimental(t)) continue;
+    if (shouldSkipInterface(t)) continue;
     index << link(t.TypeName()) << "\n";
   }
 
@@ -682,16 +707,6 @@ void write_index(string_view namespaceName, const cache::namespace_members& ns) 
     if (!g_opts->outputExperimental && IsExperimental(t)) continue;
     index << link(t.TypeName()) << "\n";
   }
-}
-
-bool shouldSkipInterface(const TypeDef& interfaceEntry) {
-#ifdef DEBUG
-  auto iname = interfaceEntry.TypeName();
-#endif
-  if (!g_opts->outputExperimental && IsExperimental(interfaceEntry)) return true;
-
-  return hasAttribute(interfaceEntry.CustomAttribute(), "StaticAttribute") ||
-    hasAttribute(interfaceEntry.CustomAttribute(), "ExclusiveToAttribute");
 }
 
 void process(output& ss, string_view namespaceName, const cache::namespace_members& ns) {
@@ -773,13 +788,11 @@ int main(int argc, char** argv)
     windows_winmd,
     g_opts->winMDPath,
   };
-  cache cache(files);
+  g_cache = std::make_unique<cache>(files);
   
   output o;
   // ostream& ss = cout;
-  for (auto const& namespaceEntry : cache.namespaces()) {
-
-    cout << "namespace " << namespaceEntry.first << endl;
+  for (auto const& namespaceEntry : g_cache->namespaces()) {
     if (namespaceEntry.first._Starts_with("Windows.")) continue;
     filesystem::path nsPath(namespaceEntry.first);
     filesystem::create_directory(nsPath);
@@ -788,5 +801,6 @@ int main(int argc, char** argv)
     filesystem::current_path("..");
     process(o, namespaceEntry.first, namespaceEntry.second);
   }
+  delete g_opts;
   return 0;
 }

@@ -1,5 +1,7 @@
 #include "output.h"
 #include "Format.h"
+#include "Options.h"
+
 using namespace std;
 
 output::output() {
@@ -13,7 +15,7 @@ output::type_helper output::StartType(std::string_view name, std::string_view ki
   }
   indents = 0;
   std::filesystem::path out("out");
-  const string filename = std::string(name) + ".md";
+  const string filename = std::string(name) + g_opts->fileSuffix + ".md";
   currentFile = std::ofstream(out / filename);
   currentFile << "---\n" <<
     "id: " << name << "\n" <<

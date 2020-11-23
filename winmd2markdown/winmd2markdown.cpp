@@ -81,13 +81,66 @@ template<typename T> string GetContentAttributeValue(string attrname, const T& t
   return {};
 }
 
+string MakeMarkdownReference(string type, string propertyName) {
+  string anchor = type;
+  string link = type;
+  if (!propertyName.empty()) {
+    anchor += (!type.empty() ? "." : "") + propertyName;
+    if (propertyName == "Properties") {
+      // special case a property or method that might be named Properties, in this case we usually want to it and not the Properties section
+      propertyName = "Properties-1";
+    }
+    std::transform(propertyName.begin(), propertyName.end(), propertyName.begin(), ::tolower);
+    link += "#" + propertyName;
+  }
+  return "[" + code(anchor) + "](" + link+ ")";
+}
+
+string MakeXmlReference(string type, string propertyName) {
+  return R"(<see cref=")" + type  + ((!type.empty() && !propertyName.empty()) ? "." : "") + propertyName + R"("/>)";
+}
+
+bool isIdentifierChar(char x) {
+  return isalnum(x) || x == '_' || x == '.';
+}
+
+template<typename Converter>
+string ResolveReferences(string sane, Converter converter) {
+  stringstream ss;
+
+  for (size_t input = 0; input < sane.length(); input++) {
+    if (sane[input] == '@') {
+      auto firstNonIdentifier = std::find_if(sane.begin() + input + 1, sane.end(), [](auto& x) { return !isIdentifierChar(x); });
+      if (firstNonIdentifier != sane.end() && firstNonIdentifier != sane.begin() && *(firstNonIdentifier - 1)== '.') {
+        firstNonIdentifier--;
+      }
+      auto next = firstNonIdentifier - sane.begin() - 1;
+      auto reference = sane.substr(input + 1, next - input);
+
+      const auto dot = reference.find('.');
+      const string type = reference.substr(0, dot);
+      const string propertyName = (dot != -1) ? reference.substr(dot + 1) : "";
+
+      ss << converter(type, propertyName);
+      
+      input = next;
+      continue;
+    }
+    ss << sane[input];
+  }
+
+
+  return ss.str();
+}
+
 template<typename T>
 string GetDocString(const T& t) {
   string val = GetContentAttributeValue("DocStringAttribute", t);
-  auto ret = boost::replace_all_copy(val, "\\n", "<br/>");
-  boost::replace_all(ret, "\r\n", "\n");
-  boost::replace_all(ret, "/-/", "//");
-  return ret;
+  auto sane = boost::replace_all_copy(val, "\\n", "<br/>");
+  boost::replace_all(sane, "\r\n", "\n");
+  boost::replace_all(sane, "/-/", "//");
+
+  return sane;
 }
 
 template<typename T>
@@ -112,8 +165,8 @@ bool IsExperimental(const T& type)
   return hasAttribute(type.CustomAttribute(), "ExperimentalAttribute");
 }
 
-template<typename T>
-string GetDeprecated(const T& type)
+template<typename T, typename Converter>
+string GetDeprecated(const T& type, Converter converter)
 {
   for (auto const& ca : type.CustomAttribute()) {
     const auto tnn = ca.TypeNamespaceAndName();
@@ -124,7 +177,7 @@ string GetDeprecated(const T& type)
       auto const argvalue = args[0].value;
       auto const& elemSig = std::get<ElemSig>(argvalue);
       const string val{ std::get<string_view>(elemSig.value) };
-      return val;
+      return ResolveReferences(val, converter);
     }
   }
   return {};
@@ -155,11 +208,11 @@ void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::option
   if (IsExperimental(type)) {
     ss << "> **EXPERIMENTAL**\n\n";
   }
-  auto depr = GetDeprecated(type);
+  auto depr = GetDeprecated(type, MakeMarkdownReference);
   constexpr bool isProperty = !std::is_same<F, nullptr_t>();
   if constexpr (isProperty)
   {
-    if (depr.empty()) depr = GetDeprecated(fallback_type.value());
+    if (depr.empty()) depr = GetDeprecated(fallback_type.value(), MakeMarkdownReference);
   }
 
   if (!depr.empty()) {
@@ -172,7 +225,7 @@ void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::option
   }
   auto const doc = GetDocString(type);
   if (!doc.empty()) {
-    ss << doc << "\n\n";
+    ss << ResolveReferences(doc, MakeMarkdownReference) << "\n\n";
 
     string name;
     if constexpr (std::is_same<T, TypeDef>()) {
@@ -181,7 +234,7 @@ void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::option
     else {
       name = string(type.Parent().TypeName()) + "." + string(type.Name());
     }
-    ss.currentXml.AddMember(mt, name, doc);
+    ss.currentXml.AddMember(mt, name, ResolveReferences(doc, MakeXmlReference));
   }
 }
 

@@ -66,18 +66,21 @@ bool isTag(size_t& pos, const std::string& text, const std::string tag) {
 
 std::string intellisense_xml::Sanitize(std::string text) {
   bool isInCode = false;
+  bool isInInlineCode = false;
   stringstream ss;
 
   for (size_t input = 0; input < text.length(); input++) {
-    switch (text[input]) {
-    case '<': {
-      if (!isInCode && (isTag(input, text, "<br/>") || isTag(input, text, "<br />"))) {
-        ss << "\n"; break;
-      }
-      ss << "&lt;"; break;
+    if (!isInCode && (isTag(input, text, "<br/>") || isTag(input, text, "<br />"))) {
+      ss << "\n"; break;
     }
-    case '>':
-      ss << "&gt;"; break;
+    switch (text[input]) {
+
+//    case '<': {    
+//      ss << "&lt;"; break;
+//    }
+//    case '>':
+//      ss << "&gt;"; break;
+//      break;
     case '`': {
       if (isTag(input, text, "```")) {
         for (size_t i = input; i < text.length(); i++) {
@@ -92,7 +95,11 @@ std::string intellisense_xml::Sanitize(std::string text) {
           const size_t pos = ss.tellp();
           ss.seekp(pos - 1);
         }
-        ss << (isInCode ? "<code>" : "</code>");
+        ss << (isInCode ? "<example><code>" : "</code></example>");
+      }
+      else {
+        isInInlineCode = !isInInlineCode;
+        ss << (isInInlineCode ? "<c>" : "</c>");
       }
       break;
     }

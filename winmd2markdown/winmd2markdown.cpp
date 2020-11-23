@@ -404,8 +404,8 @@ string GetType(const TypeSig::value_type& valueType)
     }
 
     if (winmd::reader::empty(gt.GenericArgs()) && gt.GenericArgCount() != 0) {
-      /// Missing how to figure out the T in IGeneric<T>
-      /// This indicates that we relied on a temporary that got deleted when chaining several calls
+      // Missing how to figure out the T in IGeneric<T>
+      // This indicates that we relied on a temporary that got deleted when chaining several calls
       throw std::invalid_argument("you found a bug - we probably deleted an object we shouldn't (when doing a.b().c().d())");
     }
     ss << '>';

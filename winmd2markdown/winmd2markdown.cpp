@@ -93,11 +93,11 @@ string MakeMarkdownReference(string type, string propertyName) {
     std::transform(propertyName.begin(), propertyName.end(), propertyName.begin(), ::tolower);
     link += "#" + propertyName;
   }
-  return "[" + code(anchor) + "](" + link+ ")";
+  return "[" + code(anchor) + "](" + link + ")";
 }
 
 string MakeXmlReference(string type, string propertyName) {
-  return R"(<see cref=")" + type  + ((!type.empty() && !propertyName.empty()) ? "." : "") + propertyName + R"("/>)";
+  return R"(<see cref=")" + type + ((!type.empty() && !propertyName.empty()) ? "." : "") + propertyName + R"("/>)";
 }
 
 bool isIdentifierChar(char x) {
@@ -111,7 +111,7 @@ string ResolveReferences(string sane, Converter converter) {
   for (size_t input = 0; input < sane.length(); input++) {
     if (sane[input] == '@') {
       auto firstNonIdentifier = std::find_if(sane.begin() + input + 1, sane.end(), [](auto& x) { return !isIdentifierChar(x); });
-      if (firstNonIdentifier != sane.begin() && *(firstNonIdentifier - 1)== '.') {
+      if (firstNonIdentifier != sane.begin() && *(firstNonIdentifier - 1) == '.') {
         firstNonIdentifier--;
       }
       auto next = firstNonIdentifier - sane.begin() - 1;
@@ -122,7 +122,7 @@ string ResolveReferences(string sane, Converter converter) {
       const string propertyName = (dot != -1) ? reference.substr(dot + 1) : "";
 
       ss << converter(type, propertyName);
-      
+
       input = next;
       continue;
     }
@@ -853,7 +853,7 @@ int main(int argc, char** argv)
     g_opts->winMDPath,
   };
   g_cache = std::make_unique<cache>(files);
-  
+
   output o;
   // ostream& ss = cout;
   for (auto const& namespaceEntry : g_cache->namespaces()) {

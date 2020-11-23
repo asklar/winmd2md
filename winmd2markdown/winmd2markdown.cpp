@@ -111,7 +111,7 @@ string ResolveReferences(string sane, Converter converter) {
   for (size_t input = 0; input < sane.length(); input++) {
     if (sane[input] == '@') {
       auto firstNonIdentifier = std::find_if(sane.begin() + input + 1, sane.end(), [](auto& x) { return !isIdentifierChar(x); });
-      if (firstNonIdentifier != sane.end() && firstNonIdentifier != sane.begin() && *(firstNonIdentifier - 1)== '.') {
+      if (firstNonIdentifier != sane.begin() && *(firstNonIdentifier - 1)== '.') {
         firstNonIdentifier--;
       }
       auto next = firstNonIdentifier - sane.begin() - 1;

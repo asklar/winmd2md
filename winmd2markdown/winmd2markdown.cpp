@@ -302,19 +302,26 @@ string GetNamespacePrefix(std::string_view ns)
 
 std::string typeToMarkdown(std::string_view ns, std::string type, bool toCode, string urlSuffix = "")
 {
-  constexpr auto Windows_namespace = "Windows.";
+  constexpr std::string_view docs_msft_com_namespaces[] = {
+    "Windows.",
+    "Microsoft.",
+  };
   string code = toCode ? "`" : "";
   if (ns.empty()) return type; // basic type
   else if (ns == currentNamespace) {
     return "[" + code + type + code + "](" + type + ")";
   }
-  else if (ns._Starts_with(Windows_namespace)) {
-    // if it is a Windows type use MSDN, e.g.
-    // https://docs.microsoft.com/uwp/api/Windows.UI.Xaml.Automation.ExpandCollapseState
-    const std::string docsURL = "https://docs.microsoft.com/uwp/api/";
-    return "[" + code + type + code + "](" + docsURL + string(ns) + "." + type + urlSuffix + ")";
+  else {
+    for (const auto& ns_prefix : docs_msft_com_namespaces) {
+      if (ns._Starts_with(ns_prefix)) {
+        // if it is a Windows type use MSDN, e.g.
+        // https://docs.microsoft.com/uwp/api/Windows.UI.Xaml.Automation.ExpandCollapseState
+        const std::string docsURL = "https://docs.microsoft.com/uwp/api/";
+        return "[" + code + type + code + "](" + docsURL + string(ns) + "." + type + urlSuffix + ")";
+      }
+    }
+    return GetNamespacePrefix(ns) + type;
   }
-  return GetNamespacePrefix(ns) + type;
 }
 
 string GetType(const TypeSig& type);

@@ -1,6 +1,8 @@
+#include <sstream>
 #include "output.h"
 #include "Format.h"
 #include "Options.h"
+#include <boost/algorithm/string/replace.hpp>
 
 using namespace std;
 
@@ -38,3 +40,66 @@ output::section_helper::section_helper(output& out, string s) : o(out) {
 }
 
 output::type_helper::type_helper(output& out) : o(out), sh(o.StartSection("")) {};
+
+void output::StartNamespace(std::string_view namespaceName) {
+  currentXml = intellisense_xml(namespaceName);
+}
+
+
+void intellisense_xml::AddMember(MemberType mt, std::string shortName, std::string data) {
+  auto parsedData = Sanitize(data);
+  out << R"(
+    <member name=")" << ToString(mt) << ":" << namespaceName << "." << shortName << R"(">
+      <summary>)" << parsedData << R"(</summary>)";
+
+  out << R"(
+    </member>)";
+}
+
+bool isTag(size_t& pos, const std::string& text, const std::string tag) {
+  auto ret = text.substr(pos)._Starts_with(tag);
+  if (ret) {
+    pos += tag.length() - 1;
+  }
+  return ret;
+}
+
+std::string intellisense_xml::Sanitize(std::string text) {
+  bool isInCode = false;
+  stringstream ss;
+
+  for (size_t input = 0; input < text.length(); input++) {
+    switch (text[input]) {
+    case '<': {
+      if (!isInCode && (isTag(input, text, "<br/>") || isTag(input, text, "<br />"))) {
+        ss << "\n"; break;
+      }
+      ss << "&lt;"; break;
+    }
+    case '>':
+      ss << "&gt;"; break;
+    case '`': {
+      if (isTag(input, text, "```")) {
+        for (size_t i = input; i < text.length(); i++) {
+          if (text[i] == '\r' || text[i] == '\n') {
+            input = i;
+            break;
+          }
+        }
+        isInCode = !isInCode;
+        if (!isInCode) {
+          // remove the last newline
+          const size_t pos = ss.tellp();
+          ss.seekp(pos - 1);
+        }
+        ss << (isInCode ? "<code>" : "</code>");
+      }
+      break;
+    }
+    default:
+      ss << text[input]; break;
+    }
+  }
+  assert(!isInCode);
+  return ss.str();
+}

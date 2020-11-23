@@ -150,7 +150,7 @@ bool shouldSkipInterface(const IT /*TypeDef*/& interfaceEntry) {
 /// <param name="type"></param>
 /// <param name="fallback_type"></param>
 template<typename T, typename F = nullptr_t>
-void PrintOptionalSections(output& ss, const T& type, std::optional<F> fallback_type = std::nullopt)
+void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::optional<F> fallback_type = std::nullopt)
 {
   if (IsExperimental(type)) {
     ss << "> **EXPERIMENTAL**\n\n";
@@ -173,6 +173,15 @@ void PrintOptionalSections(output& ss, const T& type, std::optional<F> fallback_
   auto const doc = GetDocString(type);
   if (!doc.empty()) {
     ss << doc << "\n\n";
+
+    string name;
+    if constexpr (std::is_same<T, TypeDef>()) {
+      name = type.TypeName();
+    }
+    else {
+      name = string(type.Parent().TypeName()) + "." + string(type.Name());
+    }
+    ss.currentXml.AddMember(mt, name, doc);
   }
 }
 
@@ -367,7 +376,7 @@ string GetType(const TypeSig& type) {
 
 void process_enum(output& ss, const TypeDef& type) {
   auto t = ss.StartType(type.TypeName(), "enum");
-  PrintOptionalSections(ss, type);
+  PrintOptionalSections(MemberType::Type, ss, type);
 
   ss << "| Name |  Value | Description |\n" << "|--|--|--|\n";
   for (auto const& value : type.FieldList()) {
@@ -421,7 +430,7 @@ void process_property(output& ss, const Property& prop) {
   else {
     auto sec = ss.StartSection(propName);
     ss << cppAttrs << " " << type << " " << name << "\n\n";
-    PrintOptionalSections(ss, prop, std::make_optional(getter));
+    PrintOptionalSections(MemberType::Property, ss, prop, std::make_optional(getter));
 
   }
 }
@@ -472,7 +481,7 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
   auto st = ss.StartSection(method_name);
   ss << sstr.str() << "\n\n";
 
-  PrintOptionalSections(ss, method);
+  PrintOptionalSections(MemberType::Method, ss, method);
   ss << "\n\n";
 }
 
@@ -498,13 +507,13 @@ void process_field(output& ss, const Field& field) {
       typeStr = GetType(tt);
     }
     ss << "Type: " << typeStr << "\n\n";
-    PrintOptionalSections(ss, field);
+    PrintOptionalSections(MemberType::Field, ss, field);
   }
 }
 
 void process_struct(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "struct");
-  PrintOptionalSections(ss, type);
+  PrintOptionalSections(MemberType::Type, ss, type);
 
   const auto fs = ss.StartSection("Fields");
 
@@ -525,7 +534,7 @@ void process_struct(output& ss, const TypeDef& type) {
 
 void process_delegate(output& ss, const TypeDef& type) {
   const auto t = ss.StartType(type.TypeName(), "delegate");
-  PrintOptionalSections(ss, type);
+  PrintOptionalSections(MemberType::Type, ss, type);
   for (auto const& method : type.MethodList()) {
     constexpr auto invokeName = "Invoke";
     const auto& name = method.Name();
@@ -576,7 +585,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     }
     ss << "\n\n";
   }
-  PrintOptionalSections(ss, type);
+  PrintOptionalSections(MemberType::Type, ss, type);
 
   {
     using entry_t = pair<string_view, const Property>;
@@ -705,7 +714,7 @@ sidebar_label: Full reference
 }
 
 void process(output& ss, string_view namespaceName, const cache::namespace_members& ns) {
-
+  ss.StartNamespace(namespaceName);
   for (auto const& enumEntry : ns.enums) {
     if (!g_opts->outputExperimental && IsExperimental(enumEntry)) continue;
     process_enum(ss, enumEntry);

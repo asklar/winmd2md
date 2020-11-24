@@ -12,6 +12,8 @@ const std::vector<option>  get_option_names() {
     { "help", "Display help", BOOL_SWITCH_SETTER(help) },
     { "sdkVersion", "SDK version number to use (e.g. 10.0.18362.0)", STRING_SWITCH_SETTER(sdkVersion) },
     { "fileSuffix", "File suffix to append to each generated markdown file. Default is \"-api-windows\"", STRING_SWITCH_SETTER(fileSuffix) },
+    { "outputDirectory", "Directory where output will be written. Default is \"out\"", STRING_SWITCH_SETTER(outputDirectory) },
+    { "printReferenceGraph", "Displays the list of types that reference each type", BOOL_SWITCH_SETTER(printReferenceGraph )},
   };
   return option_names;
 }

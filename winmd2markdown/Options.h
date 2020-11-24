@@ -22,6 +22,8 @@ struct options
   std::string sdkVersion;
   std::string winMDPath;
   std::string fileSuffix{ "-api-windows" };
+  std::string outputDirectory{ "out" };
+  bool printReferenceGraph{ false };
 
   options(const std::vector<std::string>& v) {
     auto const opts = get_option_names();

@@ -21,6 +21,11 @@ string_view ctorName = ".ctor";
 
 std::unique_ptr<winmd::reader::cache> g_cache{ nullptr };
 
+map<string, vector<TypeDef>> interfaceImplementations{};
+
+// map of namespaces N -> (map of types T in N -> (list of types that reference T))
+map<string, map<string, vector<TypeDef>>> references{};
+
 bool hasAttribute(const pair<CustomAttribute, CustomAttribute>& attrs, string attr) {
   for (auto const& ca : attrs) {
     auto const& tnn = ca.TypeNamespaceAndName();
@@ -458,6 +463,58 @@ MethodDef find_method(const TypeDef& type, string name) {
 }
 DEFINE_ENUM_FLAG_OPERATORS(MemberAccess);
 
+template <typename T>
+void AddUniqueReference(const T& type, const TypeDef& owningType)
+{
+  if (type.TypeNamespace() == owningType.TypeNamespace() && type.TypeName() == owningType.TypeName()) return;
+  auto& vec = references[string(type.TypeNamespace())][string(type.TypeName())];
+  if (std::find(vec.cbegin(), vec.cend(), owningType) == vec.cend()) {
+    vec.push_back(owningType);
+  }
+  else {
+    auto x = 0;
+  }
+}
+void AddReference(const TypeSig& prop, const TypeDef& owningType);
+
+void AddReference(const coded_index<TypeDefOrRef>& classTypeDefOrRef, const TypeDef& owningType) {
+  switch (classTypeDefOrRef.type()) {
+  case TypeDefOrRef::TypeRef: {
+    auto type = classTypeDefOrRef.TypeRef();
+    AddUniqueReference(type, owningType);
+    break;
+  }
+  case TypeDefOrRef::TypeDef: {
+    auto type = classTypeDefOrRef.TypeDef();
+    AddUniqueReference(type, owningType);
+    break;
+  }
+  case TypeDefOrRef::TypeSpec: {
+    auto type = classTypeDefOrRef.TypeSpec().Signature();
+    auto genType = type.GenericTypeInst().GenericType(); // maybe Windows.Foundation.IEventHandler<T> for some T
+    AddReference(genType, owningType);
+    for (const auto& targ : type.GenericTypeInst().GenericArgs()) {
+      AddReference(targ, owningType);
+    }
+    //AddUniqueReference(type.Signature(), owningType);
+    break;
+  }
+  }
+}
+
+void AddReference(const TypeSig& prop, const TypeDef& owningType) {
+  switch (prop.element_type()) {
+  case ElementType::Class:
+  case ElementType::Enum:
+  case ElementType::ValueType:
+  {
+    auto classTypeDefOrRef = std::get<coded_index<TypeDefOrRef>>(prop.Type());
+    AddReference(classTypeDefOrRef, owningType);
+  }
+  default:
+    break;
+  }
+}
 
 void process_property(output& ss, const Property& prop) {
   const auto& type = GetType(prop.Type().Type());
@@ -465,6 +522,7 @@ void process_property(output& ss, const Property& prop) {
 
   const auto& owningType = prop.Parent();
   const auto propName = string(prop.Name());
+  AddReference(prop.Type().Type(), owningType);
   const auto& getter = find_method(owningType, "get_" + propName);
   const auto& setter = find_method(owningType, "put_" + propName);
   bool isStatic{ false };
@@ -503,6 +561,7 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
       const auto& sig = method.Signature();
       const auto& rt = sig.ReturnType();
       const auto& type = rt.Type();
+      AddReference(type, method.Parent());
       returnType = GetType(type);
     }
     else {
@@ -534,6 +593,7 @@ void process_method(output& ss, const MethodDef& method, string_view realName = 
 
     const auto out = param.ByRef() ? "**out** " : "";
     sstr << out << GetType(param.Type()) << " " << paramNames[i];
+    AddReference(param.Type(), method.Parent());
     i++;
   }
   sstr << ")";
@@ -557,6 +617,7 @@ void process_field(output& ss, const Field& field) {
     auto sec = ss.StartSection(name);
     auto s = field.Signature();
     auto st = s.Type();
+    AddReference(st, field.Parent());
     auto tt = st.Type();
     auto et = std::get_if<ElementType>(&tt);
     string typeStr{};
@@ -569,6 +630,7 @@ void process_field(output& ss, const Field& field) {
     ss << "Type: " << typeStr << "\n\n";
     PrintOptionalSections(MemberType::Field, ss, field);
   }
+  
 }
 
 void process_struct(output& ss, const TypeDef& type) {
@@ -605,8 +667,6 @@ void process_delegate(output& ss, const TypeDef& type) {
   }
 }
 
-map<string, vector<TypeDef>> interfaceImplementations{};
-
 
 void process_class(output& ss, const TypeDef& type, string kind) {
   const auto& className = string(type.TypeName());
@@ -616,6 +676,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
   if (!extends.empty() && extends != "System.Object") {
     ss << "Extends: " + extends << "\n\n";
   }
+
   if (kind == "interface" && interfaceImplementations.find(className) != interfaceImplementations.end())
   {
     ss << "Implemented by: \n";
@@ -624,6 +685,8 @@ void process_class(output& ss, const TypeDef& type, string kind) {
       ss << "- " << typeToMarkdown(imp.TypeNamespace(), string(imp.TypeName()), true) << "\n";
     }
   }
+
+  // Print interface implementations
   {
     int i = 0;
     for (auto const& ii : type.InterfaceImpl()) {
@@ -647,6 +710,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
   }
   PrintOptionalSections(MemberType::Type, ss, type);
 
+  // Print properties
   {
     using entry_t = pair<string_view, const Property>;
     std::list<entry_t> sorted;
@@ -667,6 +731,8 @@ void process_class(output& ss, const TypeDef& type, string kind) {
     }
   }
   ss << "\n";
+
+  // Print methods and constructors
   {
 
     using entry_t = pair<string_view, const MethodDef>;
@@ -708,6 +774,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
   }
 
   ss << "\n";
+  // Print events
   {
     using entry_t = pair<string_view, const Event>;
     std::list<entry_t> sorted;
@@ -723,6 +790,7 @@ void process_class(output& ss, const TypeDef& type, string kind) {
         auto n = evt.first;
         auto ees = ss.StartSection("`" + string(evt.first) + "`");
         ss << "Type: " << ToString(evt.second.EventType()) << "\n";
+        AddReference(evt.second.EventType(), type);
       }
     }
   }
@@ -803,6 +871,24 @@ void process(output& ss, string_view namespaceName, const cache::namespace_membe
   }
 
   write_index(namespaceName, ns);
+
+  if (g_opts->printReferenceGraph) std::cout << "Reference graph:\n";
+  for (const auto& backReference : references[string(namespaceName)]) {
+    std::ofstream md(ss.GetFileForType(backReference.first), std::ofstream::out | std::ofstream::app);
+    if (g_opts->printReferenceGraph) std::cout << backReference.first << " <-- ";
+    md << R"(
+
+## Referenced by
+)";
+    std::vector<std::string> sorted;
+    std::for_each(backReference.second.begin(), backReference.second.end(), [&sorted](auto& x) { sorted.push_back(string(x.TypeName())); });
+    std::sort(sorted.begin(), sorted.end());
+    for (const auto& i : sorted) {
+      md << link(i) << "\n";
+      if (g_opts->printReferenceGraph) std::cout << i << "  ";
+    }
+    if (g_opts->printReferenceGraph) std::cout << "\n";
+  }
 }
 
 string getWindowsWinMd() {

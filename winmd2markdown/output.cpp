@@ -11,14 +11,17 @@ output::output() {
   std::filesystem::create_directory("out", ec); // ignore ec
 }
 
+filesystem::path output::GetFileForType(std::string_view name) {
+  std::filesystem::path out(g_opts->outputDirectory);
+  const string filename = std::string(name) + g_opts->fileSuffix + ".md";
+  return out / filename;
+}
 output::type_helper output::StartType(std::string_view name, std::string_view kind) {
   if (currentFile.is_open()) {
     EndType();
   }
   indents = 0;
-  std::filesystem::path out("out");
-  const string filename = std::string(name) + g_opts->fileSuffix + ".md";
-  currentFile = std::ofstream(out / filename);
+  currentFile = std::ofstream(GetFileForType(name));
   currentFile << "---\n" <<
     "id: " << name << "\n" <<
     "title: " << name << "\n" <<

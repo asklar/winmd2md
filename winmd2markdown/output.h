@@ -75,7 +75,7 @@ public:
   friend output& operator<<(output& o, const T& t);
 
   void StartNamespace(std::string_view namespaceName);
-
+  static std::filesystem::path GetFileForType(std::string_view typename);
 private:
   int indents = 0;
   void EndSection() {

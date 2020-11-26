@@ -1,32 +1,34 @@
 #include <sstream>
+#include <boost/algorithm/string/replace.hpp>
+
+#include "Options.h"
+
+#include "Program.h"
+
 #include "output.h"
 #include "Format.h"
-#include "Options.h"
-#include <boost/algorithm/string/replace.hpp>
 
 using namespace std;
 
-output::output() {
+output::output(Program* p) : program(p) {
   std::error_code ec;
   std::filesystem::create_directory("out", ec); // ignore ec
 }
 
 filesystem::path output::GetFileForType(std::string_view name) {
-  std::filesystem::path out(g_opts->outputDirectory);
-  const string filename = std::string(name) + g_opts->fileSuffix + ".md";
+  std::filesystem::path out(program->opts->outputDirectory);
+  const string filename = std::string(name) + program->opts->fileSuffix + ".md";
   return out / filename;
 }
 output::type_helper output::StartType(std::string_view name, std::string_view kind) {
-  if (currentFile.is_open()) {
-    EndType();
-  }
+  EndType();
   indents = 0;
-  currentFile = std::ofstream(GetFileForType(name));
-  currentFile << "---\n" <<
+  currentFile = std::move(GetOutputStream(GetFileForType(name)));
+  *currentFile << "---\n" <<
     "id: " << name << "\n" <<
     "title: " << name << "\n" <<
     "---\n\n";
-  currentFile << "Kind: " << code(kind) << "\n\n";
+  *currentFile << "Kind: " << code(kind) << "\n\n";
   return type_helper(*this);
 }
 
@@ -78,12 +80,12 @@ std::string intellisense_xml::Sanitize(std::string text) {
     }
     switch (text[input]) {
 
-//    case '<': {    
-//      ss << "&lt;"; break;
-//    }
-//    case '>':
-//      ss << "&gt;"; break;
-//      break;
+      //    case '<': {    
+      //      ss << "&lt;"; break;
+      //    }
+      //    case '>':
+      //      ss << "&gt;"; break;
+      //      break;
     case '`': {
       if (isTag(input, text, "```")) {
         for (size_t i = input; i < text.length(); i++) {
@@ -113,3 +115,4 @@ std::string intellisense_xml::Sanitize(std::string text) {
   assert(!isInCode);
   return ss.str();
 }
+

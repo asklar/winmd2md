@@ -1,0 +1,37 @@
+namespace Test
+{
+    [attributeusage(target_runtimeclass, target_interface, target_struct, target_enum, target_delegate, target_field, target_property, target_method, target_event)]
+    [attributename("doc_string")]
+    attribute DocStringAttribute {
+      String Content;
+    }
+
+    [attributeusage(target_property, target_method)]
+    [attributename("doc_default")] attribute DocDefaultAttribute {
+      String Content;
+    }
+
+    [default_interface]
+    [doc_string("Class doc_string")]
+    runtimeclass Class1
+    {
+        [doc_string("Class1 constructor")]
+        Class1();
+        [doc_string("MyProperty doc_string")]
+        [doc_default("MyProperty value")]
+        Int32 MyProperty;
+    };
+
+    [doc_string("Interface1 doc_string")]
+    interface Interface1
+    {
+      [doc_string("f() doc_string")]
+      void f();
+    };
+
+    [default_interface]
+    [doc_string("Class2 implements @Interface1")]
+    runtimeclass Class2 : Interface1
+    {
+    };
+}

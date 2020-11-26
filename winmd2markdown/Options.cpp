@@ -17,5 +17,3 @@ const std::vector<option>  get_option_names() {
   };
   return option_names;
 }
-
-options* g_opts = nullptr;

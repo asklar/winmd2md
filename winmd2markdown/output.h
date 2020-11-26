@@ -1,7 +1,11 @@
 #pragma once
 #include <filesystem>
 #include <string>
+#include <string_view>
+#include <iostream>
 #include <fstream>
+
+struct Program;
 
 enum class MemberType
 {
@@ -58,14 +62,16 @@ private:
   }
 };
 
+std::shared_ptr<std::ostream> GetOutputStream(const std::filesystem::path& name);
+
 struct output
 {
 private:
   struct type_helper;
   struct section_helper;
 public:
-  output();
-  std::ofstream currentFile;
+  output(Program* p);
+  std::shared_ptr<std::ostream> /*std::ofstream */ currentFile;
   intellisense_xml currentXml;
   type_helper StartType(std::string_view name, std::string_view kind);
 
@@ -75,15 +81,16 @@ public:
   friend output& operator<<(output& o, const T& t);
 
   void StartNamespace(std::string_view namespaceName);
-  static std::filesystem::path GetFileForType(std::string_view typename);
+  std::filesystem::path GetFileForType(std::string_view typename);
 private:
   int indents = 0;
   void EndSection() {
     indents--;
   }
   void EndType() {
-    currentFile.flush();
-    currentFile.close();
+    if (currentFile) {
+      currentFile->flush();
+    }
   }
   friend struct type_helper;
   struct section_helper {
@@ -101,4 +108,5 @@ private:
       o.EndType();
     }
   };
+  Program* program;
 };

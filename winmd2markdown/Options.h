@@ -63,6 +63,3 @@ struct options
     }
   }
 };
-
-extern options* g_opts;
-

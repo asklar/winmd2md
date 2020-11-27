@@ -9,7 +9,7 @@
 using namespace std;
 using namespace winmd::reader;
 
-string MakeMarkdownReference(string type, string propertyName) {
+string Formatter::MakeMarkdownReference(string type, string propertyName) {
   string anchor = type;
   string link = type;
   if (!propertyName.empty()) {
@@ -24,7 +24,7 @@ string MakeMarkdownReference(string type, string propertyName) {
   return "[" + code(anchor) + "](" + link + ")";
 }
 
-string MakeXmlReference(string type, string propertyName) {
+string Formatter::MakeXmlReference(string type, string propertyName) {
   return R"(<see cref=")" + type + ((!type.empty() && !propertyName.empty()) ? "." : "") + propertyName + R"("/>)";
 }
 
@@ -43,7 +43,7 @@ bool isIdentifierChar(char x) {
 }
 
 
-string ResolveReferences(string sane, Converter converter) {
+string Formatter::ResolveReferences(string sane, Converter converter) {
   stringstream ss;
 
   for (size_t input = 0; input < sane.length(); input++) {
@@ -71,7 +71,7 @@ string ResolveReferences(string sane, Converter converter) {
   return ss.str();
 }
 
-std::string typeToMarkdown(std::string_view ns, std::string type, bool toCode, string urlSuffix)
+std::string Formatter::typeToMarkdown(std::string_view ns, std::string type, bool toCode, string urlSuffix)
 {
   constexpr std::string_view docs_msft_com_namespaces[] = {
     "Windows.",
@@ -79,7 +79,7 @@ std::string typeToMarkdown(std::string_view ns, std::string type, bool toCode, s
   };
   string code = toCode ? "`" : "";
   if (ns.empty()) return type; // basic type
-  else if (ns == g_program.currentNamespace) {
+  else if (ns == program->currentNamespace) {
     return "[" + code + type + code + "](" + type + ")";
   }
   else {
@@ -95,15 +95,15 @@ std::string typeToMarkdown(std::string_view ns, std::string type, bool toCode, s
   }
 }
 
-string GetNamespacePrefix(std::string_view ns)
+string Formatter::GetNamespacePrefix(std::string_view ns)
 {
-  if (ns == g_program.currentNamespace) return "";
+  if (ns == program->currentNamespace) return "";
   else return string(ns) + ".";
 }
 
 std::string GetType(const winmd::reader::TypeSig& type);
 
-string ToString(const coded_index<TypeDefOrRef>& tdr, bool toCode) {
+string Formatter::ToString(const coded_index<TypeDefOrRef>& tdr, bool toCode) {
   if (!tdr) return {};
   if (tdr) {
     switch (tdr.type()) {
@@ -141,7 +141,7 @@ string ToString(const coded_index<TypeDefOrRef>& tdr, bool toCode) {
   }
 }
 
-string GetType(const TypeSig::value_type& valueType)
+string Formatter::GetType(const TypeSig::value_type& valueType)
 {
   switch (valueType.index())
   {
@@ -192,7 +192,7 @@ string GetType(const TypeSig::value_type& valueType)
   return "{NYI}some type";
 }
 
-string GetType(const TypeSig& type) {
+string Formatter::GetType(const TypeSig& type) {
   if (type.element_type() != ElementType::Class &&
     type.element_type() != ElementType::ValueType &&
     type.element_type() != ElementType::GenericInst
@@ -204,7 +204,7 @@ string GetType(const TypeSig& type) {
   }
 }
 
-std::string_view ToString(ElementType elementType) {
+std::string_view Formatter::ToString(ElementType elementType) {
   switch (elementType) {
   case ElementType::Boolean:
     return "bool";

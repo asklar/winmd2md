@@ -21,11 +21,12 @@ std::shared_ptr<std::ostream> GetOutputStream(const std::filesystem::path& name)
 
 TEST_CLASS(UnitTests)
 {
+	static Program program;
 public:
 
 	TEST_CLASS_INITIALIZE(Setup)
 	{
-		g_program.Process({ "..\\..\\x64\\Debug\\Test\\Test.winmd" });
+		program.Process({ "..\\..\\x64\\Debug\\Test\\Test.winmd" });
 	}
 
 	TEST_METHOD(SanityCheck)
@@ -127,3 +128,5 @@ f() doc_string
 
 	}
 };
+
+Program UnitTests::program;

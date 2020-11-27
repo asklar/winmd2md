@@ -5,6 +5,7 @@
 
 #include "Options.h"
 #include "output.h"
+#include "Format.h"
 
 struct Program {
   std::string currentNamespace;
@@ -26,7 +27,7 @@ struct Program {
   output ss;
   friend class UnitTests;
 
-  Program() : ss(this) {}
+  Program() : ss(this), format(this) {}
 private:
   void process_class(output& ss, const winmd::reader::TypeDef& type, std::string kind);
   void process_enum(output& ss, const winmd::reader::TypeDef& type);
@@ -43,8 +44,14 @@ private:
   void AddReference(const winmd::reader::coded_index<winmd::reader::TypeDefOrRef>& classTypeDefOrRef, const winmd::reader::TypeDef& owningType);
 
   std::string getWindowsWinMd();
+  template<typename IT>
+  bool shouldSkipInterface(const IT /*TypeDef*/& interfaceEntry);
 
+  template<typename T, typename F = nullptr_t>
+  void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::optional<F> fallback_type = std::nullopt);
+
+  template<typename T, typename Converter>
+  std::string GetDeprecated(const T& type, Converter converter);
+
+  Formatter format;
 };
-
-extern Program g_program;
-

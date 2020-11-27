@@ -22,7 +22,8 @@ std::shared_ptr<std::ostream> GetOutputStream(const std::filesystem::path& name)
 
 int main(int argc, char** argv)
 {
-  g_program.Process(std::vector<string>(argv + 1, argv + argc));
+  Program program;
+  program.Process(std::vector<string>(argv + 1, argv + argc));
 
   return 0;
 }

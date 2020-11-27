@@ -77,7 +77,7 @@ bool IsExperimental(const T& type)
 }
 
 template<typename T, typename Converter>
-string GetDeprecated(const T& type, Converter converter)
+string Program::GetDeprecated(const T& type, Converter converter)
 {
   for (auto const& ca : type.CustomAttribute()) {
     const auto tnn = ca.TypeNamespaceAndName();
@@ -88,18 +88,18 @@ string GetDeprecated(const T& type, Converter converter)
       auto const argvalue = args[0].value;
       auto const& elemSig = std::get<ElemSig>(argvalue);
       const string val{ std::get<string_view>(elemSig.value) };
-      return ResolveReferences(val, converter);
+      return format.ResolveReferences(val, converter);
     }
   }
   return {};
 }
 
 template<typename IT>
-bool shouldSkipInterface(const IT /*TypeDef*/& interfaceEntry) {
+bool Program::shouldSkipInterface(const IT /*TypeDef*/& interfaceEntry) {
 #ifdef DEBUG
   auto iname = interfaceEntry.TypeName();
 #endif
-  if (!g_program.opts->outputExperimental && IsExperimental(interfaceEntry)) return true;
+  if (!opts->outputExperimental && IsExperimental(interfaceEntry)) return true;
 
   return hasAttribute(interfaceEntry.CustomAttribute(), "StaticAttribute") ||
     hasAttribute(interfaceEntry.CustomAttribute(), "ExclusiveToAttribute");
@@ -114,16 +114,16 @@ bool shouldSkipInterface(const IT /*TypeDef*/& interfaceEntry) {
 /// <param name="type"></param>
 /// <param name="fallback_type"></param>
 template<typename T, typename F = nullptr_t>
-void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::optional<F> fallback_type = std::nullopt)
+void Program::PrintOptionalSections(MemberType mt, output& ss, const T& type, std::optional<F> fallback_type)
 {
   if (IsExperimental(type)) {
     ss << "> **EXPERIMENTAL**\n\n";
   }
-  auto depr = GetDeprecated(type, MakeMarkdownReference);
+  auto depr = GetDeprecated(type, Formatter::MakeMarkdownReference);
   constexpr bool isProperty = !std::is_same<F, nullptr_t>();
   if constexpr (isProperty)
   {
-    if (depr.empty()) depr = GetDeprecated(fallback_type.value(), MakeMarkdownReference);
+    if (depr.empty()) depr = GetDeprecated(fallback_type.value(), Formatter::MakeMarkdownReference);
   }
 
   if (!depr.empty()) {
@@ -136,7 +136,7 @@ void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::option
   }
   auto const doc = GetDocString(type);
   if (!doc.empty()) {
-    ss << ResolveReferences(doc, MakeMarkdownReference) << "\n\n";
+    ss << format.ResolveReferences(doc, Formatter::MakeMarkdownReference) << "\n\n";
 
     string name;
     if constexpr (std::is_same<T, TypeDef>()) {
@@ -145,7 +145,7 @@ void PrintOptionalSections(MemberType mt, output& ss, const T& type, std::option
     else {
       name = string(type.Parent().TypeName()) + "." + string(type.Name());
     }
-    ss.currentXml.AddMember(mt, name, ResolveReferences(doc, MakeXmlReference));
+    ss.currentXml.AddMember(mt, name, format.ResolveReferences(doc, Formatter::MakeXmlReference));
   }
 }
 
@@ -162,9 +162,6 @@ std::string GetTypeKind(const TypeDef& type)
     return "class";
   }
 }
-
-
-Program g_program;
 
 
 MethodDef find_method(const TypeDef& type, string name) {
@@ -237,7 +234,7 @@ void Program::process_class(output& ss, const TypeDef& type, string kind) {
   const auto& className = string(type.TypeName());
   const auto t = ss.StartType(className, kind);
 
-  const auto& extends = ToString(type.Extends());
+  const auto& extends = format.ToString(type.Extends());
   if (!extends.empty() && extends != "System.Object") {
     ss << "Extends: " + extends << "\n\n";
   }
@@ -247,7 +244,7 @@ void Program::process_class(output& ss, const TypeDef& type, string kind) {
     ss << "Implemented by: \n";
     for (auto const& imp : interfaceImplementations[className])
     {
-      ss << "- " << typeToMarkdown(imp.TypeNamespace(), string(imp.TypeName()), true) << "\n";
+      ss << "- " << format.typeToMarkdown(imp.TypeNamespace(), string(imp.TypeName()), true) << "\n";
     }
   }
 
@@ -268,7 +265,7 @@ void Program::process_class(output& ss, const TypeDef& type, string kind) {
         ss << ", ";
       }
       i++;
-      ss << ToString(ii.Interface());
+      ss << format.ToString(ii.Interface());
       interfaceImplementations[ifaceName].push_back(TypeDef(type));
     }
     ss << "\n\n";
@@ -354,7 +351,7 @@ void Program::process_class(output& ss, const TypeDef& type, string kind) {
       for (auto const& evt : sorted) {
         auto n = evt.first;
         auto ees = ss.StartSection("`" + string(evt.first) + "`");
-        ss << "Type: " << ToString(evt.second.EventType()) << "\n";
+        ss << "Type: " << format.ToString(evt.second.EventType()) << "\n";
         AddReference(evt.second.EventType(), type);
       }
     }
@@ -412,7 +409,7 @@ void Program::AddReference(const TypeSig& prop, const TypeDef& owningType) {
 }
 
 void Program::process_property(output& ss, const Property& prop) {
-  const auto& type = GetType(prop.Type().Type());
+  const auto& type = format.GetType(prop.Type().Type());
   const auto& name = code(prop.Name());
 
   const auto& owningType = prop.Parent();
@@ -457,7 +454,7 @@ void Program::process_method(output& ss, const MethodDef& method, string_view re
       const auto& rt = sig.ReturnType();
       const auto& type = rt.Type();
       AddReference(type, method.Parent());
-      returnType = GetType(type);
+      returnType = format.GetType(type);
     }
     else {
       returnType = "void";
@@ -487,7 +484,7 @@ void Program::process_method(output& ss, const MethodDef& method, string_view re
     }
 
     const auto out = param.ByRef() ? "**out** " : "";
-    sstr << out << GetType(param.Type()) << " " << paramNames[i];
+    sstr << out << format.GetType(param.Type()) << " " << paramNames[i];
     AddReference(param.Type(), method.Parent());
     i++;
   }
@@ -502,7 +499,7 @@ void Program::process_method(output& ss, const MethodDef& method, string_view re
 
 
 void Program::process_field(output& ss, const Field& field) {
-  const auto& type = GetType(field.Signature().Type());
+  const auto& type = format.GetType(field.Signature().Type());
   const auto& name = string(field.Name());
   if (opts->fieldsAsTable) {
     auto description = GetDocString(field);
@@ -520,7 +517,7 @@ void Program::process_field(output& ss, const Field& field) {
       typeStr = code(type);
     }
     else {
-      typeStr = GetType(tt);
+      typeStr = format.GetType(tt);
     }
     ss << "Type: " << typeStr << "\n\n";
     PrintOptionalSections(MemberType::Field, ss, field);

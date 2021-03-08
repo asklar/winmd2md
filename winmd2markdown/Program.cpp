@@ -34,7 +34,7 @@ template<typename T> string GetContentAttributeValue(string attrname, const T& t
           auto const& elemSig = std::get<ElemSig>(argvalue.value);
           const string val{ std::get<string_view>(elemSig.value) };
 
-          auto ret = boost::replace_all_copy(val, "\\n", "<br/>");
+          auto ret = boost::replace_all_copy(val, "\\n", "\n");
           return ret;
         }
       }
@@ -47,7 +47,7 @@ template<typename T> string GetContentAttributeValue(string attrname, const T& t
 template<typename T>
 string GetDocString(const T& t) {
   string val = GetContentAttributeValue("DocStringAttribute", t);
-  auto sane = boost::replace_all_copy(val, "\\n", "<br/>");
+  auto sane = boost::replace_all_copy(val, "\\n", "\n");
   boost::replace_all(sane, "\r\n", "\n");
   boost::replace_all(sane, "/-/", "//");
 

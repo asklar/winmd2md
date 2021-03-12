@@ -73,8 +73,8 @@ namespace MyAppOrLibrary {
 
 ### See it in action
 If you want to see what the generated markdown looks like you can check out the React Native for Windows repo/website:
-- Markdown docs where we have text content (doc_string / doc_default attributes): react-native-windows-samples/docs at master · microsoft/react-native-windows-samples (github.com)
-  - Website link: namespace Microsoft.ReactNative · React Native for Windows + macOS
-- Markdown docs with just the type information (no doc_string/doc_default):  react-native-windows-samples/website/versioned_docs/version-0.63 at master · microsoft/react-native-windows-samples (github.com)
-  - Website link: namespace Microsoft.ReactNative · React Native for Windows + macOS
+- Markdown docs where we have text content (doc_string / doc_default attributes): [react-native-windows-samples/docs](https://github.com/microsoft/react-native-windows-samples/tree/master/docs)
+  - Website link: [namespace Microsoft.ReactNative · React Native for Windows + macOS](https://microsoft.github.io/react-native-windows/docs/next/Native-API-Reference)
+- Markdown docs with just the type information (no doc_string/doc_default):  [react-native-windows-samples/website/versioned_docs/version-0.63](https://github.com/microsoft/react-native-windows-samples/tree/master/website/versioned_docs/version-0.63)
+  - Website link: [namespace Microsoft.ReactNative · React Native for Windows + macOS](https://microsoft.github.io/react-native-windows/docs/Native-API-Reference)
 

@@ -23,12 +23,15 @@ WinMD2MD will also understand certain custom attributes that you can apply to ty
 
 ```csharp
 namespace MyAppOrLibrary {
+
+  /// Add doc_string to your app's IDL
   [attributeusage(target_runtimeclass, target_interface, target_struct, target_enum, target_delegate, target_field, target_property, target_method, target_event)]
   [attributename("doc_string")]
   attribute DocStringAttribute {
     String Content;
   }
 
+  /// Add doc_default to your app's IDL
   [attributeusage(target_property, target_method)]
   [attributename("doc_default")] attribute DocDefaultAttribute {
     String Content;

@@ -63,10 +63,18 @@ namespace MyAppOrLibrary {
 }
 ```
 
-Features:
+### Features
 - WinMD2MD will pull out the information from the doc_string, doc_default, experimental and deprecated attributes,
 - Helps document type/API information
 - Reasons over references between the different types in your assembly and add a back-links section at the bottom of the page.
 - You can also include markdown in your strings.
 - You can link to other types and their members with the `@Type.Member`, or `@Type` syntax. This produces hyperlinks to types either in your own assembly, or on docs.microsoft.com if the type is in the Windows or Microsoft namespace.
 - Finally, WinMD2MD will also write an index page with links to all the types in the assembly.
+
+### See it in action
+If you want to see what the generated markdown looks like you can check out the React Native for Windows repo/website:
+- Markdown docs where we have text content (doc_string / doc_default attributes): react-native-windows-samples/docs at master · microsoft/react-native-windows-samples (github.com)
+  - Website link: namespace Microsoft.ReactNative · React Native for Windows + macOS
+- Markdown docs with just the type information (no doc_string/doc_default):  react-native-windows-samples/website/versioned_docs/version-0.63 at master · microsoft/react-native-windows-samples (github.com)
+  - Website link: namespace Microsoft.ReactNative · React Native for Windows + macOS
+

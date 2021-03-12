@@ -8,7 +8,7 @@ Every type will then contain the APIs it contains, and cross-link to other types
 The output is saved to the `out` folder under the current folder.
 
 **Syntax**:  `winmd2md.exe [options] myWinmd.winmd`
-
+```
    /experimental          Include APIs marked [experimental]
    /propsAsTable          Output Properties as a table
    /fieldsAsTable         Output Fields as a table
@@ -17,6 +17,7 @@ The output is saved to the `out` folder under the current folder.
    /fileSuffix            File suffix to append to each generated markdown file. Default is "-api-windows"
    /outputDirectory       Directory where output will be written. Default is "out"
    /printReferenceGraph   Displays the list of types that reference each type
+```
 
 WinMD2MD will also understand certain custom attributes that you can apply to types and APIs, and use those custom attributes' values:
 

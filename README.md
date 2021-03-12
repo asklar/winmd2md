@@ -37,19 +37,35 @@ namespace MyAppOrLibrary {
   [doc_string("This is the documentation string for this interface")]
   [webhosthidden]
   interface IMyInterface {
-    [doc_string("This function does something. See @MyClass.function2 for more info")]
-    void f();
+    [doc_string("This function does something. See @MyClass.Function2 for more info")]
+    void Function1();
   }
   
   [doc_string("This class implements @MyInterface")]
   runtimeclass MyClass : IMyInterface {
-    void f();
-    [doc_string("This is another function. It is related to @IMyInterface.f.");
-    void function2();
+    void Function1();
+    [doc_string("This is another function. It is related to @IMyInterface.Function1.");
+    void Function2();
     
     [doc_string("This is a sample property")]
     [doc_default("8080")]
     Int32 HttpPort { get; set; }  
+    
+    [deprecated("Don't use this property, use @.HttpPort instead", "deprecate", 42)]
+    Int32 DeprecatedHttpPort { get; set; }
+    
+    [experimental]
+    void ExperimentalFunction();
   }
+  
+  
 }
 ```
+
+Features:
+- WinMD2MD will pull out the information from the doc_string, doc_default, experimental and deprecated attributes,
+- Helps document type/API information
+- Reasons over references between the different types in your assembly and add a back-links section at the bottom of the page.
+- You can also include markdown in your strings.
+- You can link to other types and their members with the `@Type.Member`, or `@Type` syntax. This produces hyperlinks to types either in your own assembly, or on docs.microsoft.com if the type is in the Windows or Microsoft namespace.
+- Finally, WinMD2MD will also write an index page with links to all the types in the assembly.

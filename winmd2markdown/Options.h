@@ -24,6 +24,8 @@ struct options
   std::string fileSuffix{ "-api-windows" };
   std::string outputDirectory{ "out" };
   bool printReferenceGraph{ false };
+  std::string apiVersion;
+
 
   options(const std::vector<std::string>& v) {
     auto const opts = get_option_names();

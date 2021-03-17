@@ -24,10 +24,16 @@ output::type_helper output::StartType(std::string_view name, std::string_view ki
   EndType();
   indents = 0;
   currentFile = std::move(GetOutputStream(GetFileForType(name)));
+  const auto apiVersionPrefix = (program->opts->apiVersion != "") ? ("version-" + program->opts->apiVersion + "-") : "";
   *currentFile << "---\n" <<
-    "id: " << name << "\n" <<
-    "title: " << name << "\n" <<
-    "---\n\n";
+    "id: " << apiVersionPrefix << name << "\n" <<
+    "title: " << name << "\n";
+
+  if (program->opts->apiVersion != "") {
+    *currentFile << "original_id: " << name << "\n";
+  }
+
+  *currentFile << "---\n\n";
   *currentFile << "Kind: " << code(kind) << "\n\n";
   return type_helper(*this);
 }

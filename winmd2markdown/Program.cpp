@@ -48,6 +48,7 @@ template<typename T>
 string GetDocString(const T& t) {
   string val = GetContentAttributeValue("DocStringAttribute", t);
   auto sane = boost::replace_all_copy(val, "\\n", "\n");
+  boost::replace_all(sane, "\\r", "\r");
   boost::replace_all(sane, "\r\n", "\n");
   boost::replace_all(sane, "/-/", "//");
 
@@ -615,10 +616,19 @@ int Program::Process(std::vector<std::string> argv) {
 void Program::write_index(string_view namespaceName, const cache::namespace_members& ns) {
   ofstream index("out/index" + opts->fileSuffix + ".md");
 
+  const auto apiVersionPrefix = (opts->apiVersion != "") ? ("version-" + opts->apiVersion + "-") : "";
+
   index << R"(---
-id: Native-API-Reference
+id: )" << apiVersionPrefix << R"(Native-API-Reference
 title: namespace )" << namespaceName << R"(
 sidebar_label: Full reference
+)";
+
+  if (opts->apiVersion != "") {
+    index << "original_id: " << "Native-API-Reference" << "\n";
+  }
+
+  index << R"(
 ---
 
 )";

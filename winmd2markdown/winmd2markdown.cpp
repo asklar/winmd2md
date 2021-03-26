@@ -17,7 +17,11 @@ using namespace winmd::reader;
 
 std::shared_ptr<std::ostream> GetOutputStream(const std::filesystem::path& name)
 {
-  return make_shared<ofstream>(name);
+  auto os = make_shared<ofstream>(name);
+  if (!os->good()) {
+    throw exception(("Failed to create file " + name.string()).c_str());
+  }
+  return os;
 }
 
 int main(int argc, char** argv)

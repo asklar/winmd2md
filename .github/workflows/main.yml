@@ -28,5 +28,8 @@ jobs:
       - name: Setup NuGet.exe for use with actions
         uses: NuGet/setup-nuget@v1.0.5
 
+      - name: NuGet sources
+        run: nuget sources
+        
       - name: msbuild
         run: msbuild /p:platform=x86,configuration=Debug /restore /p:RestorePackagesConfig=true

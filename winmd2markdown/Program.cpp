@@ -120,11 +120,11 @@ void Program::PrintOptionalSections(MemberType mt, output& ss, const T& type, st
   if (IsExperimental(type)) {
     ss << "> **EXPERIMENTAL**\n\n";
   }
-  auto depr = GetDeprecated(type, Formatter::MakeMarkdownReference);
+  auto depr = GetDeprecated(type, &Formatter::MakeMarkdownReference);
   constexpr bool isProperty = !std::is_same<F, nullptr_t>();
   if constexpr (isProperty)
   {
-    if (depr.empty()) depr = GetDeprecated(fallback_type.value(), Formatter::MakeMarkdownReference);
+    if (depr.empty()) depr = GetDeprecated(fallback_type.value(), &Formatter::MakeMarkdownReference);
   }
 
   if (!depr.empty()) {
@@ -137,7 +137,7 @@ void Program::PrintOptionalSections(MemberType mt, output& ss, const T& type, st
   }
   auto const doc = GetDocString(type);
   if (!doc.empty()) {
-    ss << format.ResolveReferences(doc, Formatter::MakeMarkdownReference) << "\n\n";
+    ss << format.ResolveReferences(doc, &Formatter::MakeMarkdownReference) << "\n\n";
 
     string name;
     if constexpr (std::is_same<T, TypeDef>()) {
@@ -146,7 +146,7 @@ void Program::PrintOptionalSections(MemberType mt, output& ss, const T& type, st
     else {
       name = string(type.Parent().TypeName()) + "." + string(type.Name());
     }
-    ss.currentXml.AddMember(mt, name, format.ResolveReferences(doc, Formatter::MakeXmlReference));
+    ss.currentXml.AddMember(mt, name, format.ResolveReferences(doc, &Formatter::MakeXmlReference));
   }
 }
 

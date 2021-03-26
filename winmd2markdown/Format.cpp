@@ -9,23 +9,36 @@
 using namespace std;
 using namespace winmd::reader;
 
-string Formatter::MakeMarkdownReference(string type, string propertyName) {
+string Formatter::MakeMarkdownReference(const string& ns, const string& type, const string& propertyName) {
   string anchor = type;
   string link = type;
+  if (ns != program->currentNamespace && !ns.empty()) {
+    return typeToMarkdown(ns, type + (!propertyName.empty() ? ("." + propertyName) : ""), true);
+  }
   if (!propertyName.empty()) {
     anchor += (!type.empty() ? "." : "") + propertyName;
-    if (propertyName == "Properties") {
+    auto p = propertyName;
+    if (p == "Properties") {
       // special case a property or method that might be named Properties, in this case we usually want to it and not the Properties section
-      propertyName = "Properties-1";
+      p = "Properties-1";
     }
-    std::transform(propertyName.begin(), propertyName.end(), propertyName.begin(), ::tolower);
-    link += "#" + propertyName;
+    std::transform(p.begin(), p.end(), p.begin(), ::tolower);
+    link += "#" + p;
+  }
+  else {
+    // this is a type reference
+    auto dot = type.rfind('.');
+    if (dot != -1) {
+      auto ns = type.substr(0, dot);
+      auto typeName = type.substr(dot + 1);
+      return typeToMarkdown(ns, typeName, true);
+    }
   }
   return "[" + code(anchor) + "](" + link + ")";
 }
 
-string Formatter::MakeXmlReference(string type, string propertyName) {
-  return R"(<see cref=")" + type + ((!type.empty() && !propertyName.empty()) ? "." : "") + propertyName + R"("/>)";
+string Formatter::MakeXmlReference(const string& ns, const string& type, const string& propertyName) {
+  return R"(<see cref=")" + (ns.empty() ? program->currentNamespace : ns) + "." + type + ((!type.empty() && !propertyName.empty()) ? "." : "") + propertyName + R"("/>)";
 }
 
 std::string code(std::string_view v) {
@@ -54,13 +67,38 @@ string Formatter::ResolveReferences(string sane, Converter converter) {
       }
       auto next = firstNonIdentifier - sane.begin() - 1;
       auto reference = sane.substr(input + 1, next - input);
+      // The reference could either be a @TypeName.Property
+      // Or it could be a @.Property
+      // Or it could be a @TypeName
+      // So we have to disambiguate whether we are dealing with a type or a property
+      const auto dot = reference.rfind('.');
+      const string prefix = reference.substr(0, dot);
+      const string suffix = (dot != -1) ? reference.substr(dot + 1) : "";
+      TypeDef referredType;
+      if (referredType = program->cache->find(prefix, suffix)) {
+        ss << (this->*converter)(prefix, suffix, "");
+      }
+      else if (suffix.empty() && (referredType = program->cache->find(program->currentNamespace, prefix))) {
+        ss << (this->*converter)(program->currentNamespace, prefix, ""); // typeToMarkdown(referredType.TypeNamespace(), string(referredType.TypeName()), true);
+      }
+      else {
+        if (referredType = program->cache->find(program->currentNamespace, prefix)) {
+          // reference is @LocalType.Property
+          ss << (this->*converter)("", prefix, suffix);
+        }
+        else {
+          const auto dot2 = prefix.rfind('.');
+          if (dot2 != -1 || prefix.empty()) { // either it's a Ns.Type.Prop, or its a .Prop for the current type
+            const string ns = prefix.substr(0, dot2);
+            const string typeName = prefix.substr(dot2 + 1);
 
-      const auto dot = reference.find('.');
-      const string type = reference.substr(0, dot);
-      const string propertyName = (dot != -1) ? reference.substr(dot + 1) : "";
-
-      ss << converter(type, propertyName);
-
+            ss << (this->*converter)(ns, typeName, suffix);
+          }
+          else {
+            throw exception(("unknown reference: " + reference).c_str());
+          }
+        }
+      }
       input = next;
       continue;
     }

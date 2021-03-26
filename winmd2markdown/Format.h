@@ -9,11 +9,11 @@ struct Formatter
 {
   Formatter(Program* p) : program(p) {};
 
-  static std::string MakeMarkdownReference(std::string type, std::string propertyName);
+  std::string MakeMarkdownReference(const std::string& ns, const std::string& type, const std::string& propertyName);
 
-  static std::string MakeXmlReference(std::string type, std::string propertyName);
+  std::string MakeXmlReference(const std::string& ns, const std::string& type, const std::string& propertyName);
 
-  using Converter = std::string(*)(std::string, std::string);
+  using Converter = std::string(Formatter::*)(const std::string& ns, const std::string& typeName, const std::string& propName);
   std::string ResolveReferences(std::string sane, Converter converter);
 
   std::string typeToMarkdown(std::string_view ns, std::string type, bool toCode, std::string urlSuffix = "");

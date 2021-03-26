@@ -18,11 +18,14 @@ output::output(Program* p) : program(p) {
 filesystem::path output::GetFileForType(std::string_view name) {
   std::filesystem::path out(program->opts->outputDirectory);
   const string filename = std::string(name) + program->opts->fileSuffix + ".md";
-  return std::filesystem::canonical(out / filename);
+  return out / filename;
 }
 output::type_helper output::StartType(std::string_view name, std::string_view kind) {
   EndType();
   indents = 0;
+  if (name == "ReactDispatcherHelper") {
+    auto x = 0;
+  }
   currentFile = std::move(GetOutputStream(GetFileForType(name)));
   const auto apiVersionPrefix = (program->opts->apiVersion != "") ? ("version-" + program->opts->apiVersion + "-") : "";
   *currentFile << "---\n" <<

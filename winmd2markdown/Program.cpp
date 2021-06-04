@@ -614,7 +614,7 @@ int Program::Process(std::vector<std::string> argv) {
 }
 
 void Program::write_index(string_view namespaceName, const cache::namespace_members& ns) {
-  ofstream index("out/index" + opts->fileSuffix + ".md");
+  ofstream index(ss.GetFileForType("index"));
 
   const auto apiVersionPrefix = (opts->apiVersion != "") ? ("version-" + opts->apiVersion + "-") : "";
 

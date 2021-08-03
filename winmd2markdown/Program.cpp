@@ -231,6 +231,15 @@ void Program::process(std::string_view namespaceName, const cache::namespace_mem
   }
 }
 
+MethodDef FindMethodInType(const TypeDef& type, const std::string& name) {
+  for (auto md : type.MethodList()) {
+    if (md.Name() == name) {
+      return md;
+    }
+  }
+  return {};
+}
+
 void Program::process_class(output& ss, const TypeDef& type, string kind) {
   const auto& className = string(type.TypeName());
   const auto t = ss.StartType(className, kind);
@@ -253,11 +262,31 @@ void Program::process_class(output& ss, const TypeDef& type, string kind) {
   {
     int i = 0;
     for (auto const& ii : type.InterfaceImpl()) {
-      const auto& tr = ii.Interface().TypeRef();
-      const auto& ifaceName = string(tr.TypeName());
+      const auto iface = ii.Interface();
 
-      const auto& td = cache->find(tr.TypeNamespace(), tr.TypeName());
-      if (shouldSkipInterface(td)) continue;
+      const auto tdr = iface.type();
+      TypeDef td{};
+      std::string ifaceName;
+      if (tdr == TypeDefOrRef::TypeRef) {
+
+        const auto& tr = iface.TypeRef();
+        ifaceName = string(tr.TypeName());
+
+        td = cache->find(tr.TypeNamespace(), tr.TypeName());
+        if (shouldSkipInterface(td)) continue;
+      }
+      else if (tdr == TypeDefOrRef::TypeDef) {
+        td = iface.TypeDef();
+        ifaceName = string(td.TypeName());
+        if (shouldSkipInterface(td)) continue;
+      }
+      else if (tdr == TypeDefOrRef::TypeSpec) {
+        ifaceName = string(format.ToString(ii.Interface()));
+        const auto& ts = iface.TypeSpec();
+        if (shouldSkipInterface(ts)) continue;
+        // TODO: what do we do?
+      }
+      
 
       if (i == 0) {
         ss << "Implements: ";
@@ -350,8 +379,11 @@ void Program::process_class(output& ss, const TypeDef& type, string kind) {
     if (!sorted.empty()) {
       auto es = ss.StartSection("Events");
       for (auto const& evt : sorted) {
-        auto n = evt.first;
+        auto n = string(evt.first);
         auto ees = ss.StartSection("`" + string(evt.first) + "`");
+        auto methodList = type.MethodList();
+        auto addMethod = FindMethodInType(type, "add_" + n);
+        PrintOptionalSections(MemberType::Event, ss, addMethod);
         ss << "Type: " << format.ToString(evt.second.EventType()) << "\n";
         AddReference(evt.second.EventType(), type);
       }
@@ -559,6 +591,43 @@ void Program::process_delegate(output& ss, const TypeDef& type) {
     }
   }
 }
+template<typename T>
+T getVariantValueAs(const Constant::constant_type& ct) {
+  // using constant_type = std::variant<bool, char16_t, int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t, float, double, std::string_view, std::nullptr_t>;
+  
+  switch (ct.index()) {
+  case 0:
+    return static_cast<T>(std::get<bool>(ct));
+  case 1:
+    return static_cast<T>(std::get<char16_t>(ct));
+  case 2:
+    return static_cast<T>(std::get<int8_t>(ct));
+  case 3:
+    return static_cast<T>(std::get<uint8_t>(ct));
+  case 4:
+    return static_cast<T>(std::get<int16_t>(ct));
+  case 5:
+    return static_cast<T>(std::get<uint16_t>(ct));
+  case 6:
+    return static_cast<T>(std::get<int32_t>(ct));
+  case 7:
+    return static_cast<T>(std::get<uint32_t>(ct));
+  case 8:
+    return static_cast<T>(std::get<int64_t>(ct));
+  case 9:
+    return static_cast<T>(std::get<uint64_t>(ct));
+  case 10:
+    return static_cast<T>(std::get<float>(ct));
+  case 11:
+    return static_cast<T>(std::get<double>(ct));
+  case 12:
+    throw std::bad_variant_access();
+  case 13:
+    return 0;
+  default:
+    throw std::bad_variant_access();
+   }
+}
 
 void Program::process_enum(output& ss, const TypeDef& type) {
   auto t = ss.StartType(type.TypeName(), "enum");
@@ -569,7 +638,9 @@ void Program::process_enum(output& ss, const TypeDef& type) {
     if (value.Flags().SpecialName()) {
       continue;
     }
-    uint32_t val = static_cast<uint32_t>((value.Signature().Type().element_type() == ElementType::U4) ? value.Constant().ValueUInt32() : value.Constant().ValueInt32());
+    const auto elementType = value.Signature().Type().element_type();
+    const auto val = getVariantValueAs<int64_t>(value.Constant().Value());
+
     ss << "|" << code(value.Name()) << " | " << std::hex << "0x" << val << "  |  " << GetDocString(value) << "|\n";
   }
 }

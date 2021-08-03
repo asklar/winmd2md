@@ -25,7 +25,7 @@ struct options
   std::string outputDirectory{ "out" };
   bool printReferenceGraph{ false };
   std::string apiVersion;
-
+  bool strictReferences{ false };
 
   options(const std::vector<std::string>& v) {
     auto const opts = get_option_names();

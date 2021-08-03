@@ -95,7 +95,12 @@ string Formatter::ResolveReferences(string sane, Converter converter) {
             ss << (this->*converter)(ns, typeName, suffix);
           }
           else {
-            throw exception(("unknown reference: " + reference).c_str());
+            if (program->opts->strictReferences) {
+              throw exception(("unknown reference: " + reference).c_str());
+            }
+            else {
+              ss << reference << " (unresolved reference)";
+            }
           }
         }
       }
@@ -165,7 +170,7 @@ string Formatter::ToString(const coded_index<TypeDefOrRef>& tdr, bool toCode) {
       for (auto const& a : s.GenericArgs())
       {
         auto x = GetType(a);
-        return x;
+        return p + "<" + x + ">";
       }
 
       return "TypeSpec";

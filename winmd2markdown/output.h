@@ -12,7 +12,8 @@ enum class MemberType
   Property,
   Type,
   Field,
-  Method
+  Method,
+  Event
 };
 
 struct intellisense_xml
@@ -56,6 +57,8 @@ private:
       return 'T';
     case MemberType::Method:
       return 'M';
+    case MemberType::Event:
+      return 'E';
     default:
       throw std::invalid_argument("unexpected member type");
     }

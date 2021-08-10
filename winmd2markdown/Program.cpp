@@ -465,6 +465,7 @@ void Program::process_property(output& ss, const Property& prop) {
   auto cppAttrs = (isStatic ? (code("static") + "   ") : "") + (readonly ? (code("readonly") + " ") : "");
   if (opts->propertiesAsTable) {
     auto description = GetDocString(prop);
+    description = format.ResolveReferences(description, &Formatter::MakeMarkdownReference);
     if (!default_val.empty()) {
       description += "<br/>default: " + default_val;
     }
@@ -535,7 +536,7 @@ void Program::process_field(output& ss, const Field& field) {
   const auto& type = format.GetType(field.Signature().Type());
   const auto& name = string(field.Name());
   if (opts->fieldsAsTable) {
-    auto description = GetDocString(field);
+    auto description = format.ResolveReferences(GetDocString(field), &Formatter::MakeMarkdownReference);
     ss << "| " << name << " | " << type << " | " << description << " |\n";
   }
   else {
@@ -641,7 +642,7 @@ void Program::process_enum(output& ss, const TypeDef& type) {
     const auto elementType = value.Signature().Type().element_type();
     const auto val = getVariantValueAs<int64_t>(value.Constant().Value());
 
-    ss << "|" << code(value.Name()) << " | " << std::hex << "0x" << val << "  |  " << GetDocString(value) << "|\n";
+    ss << "|" << code(value.Name()) << " | " << std::hex << "0x" << val << "  |  " << format.ResolveReferences(GetDocString(value), &Formatter::MakeMarkdownReference) << "|\n";
   }
 }
 

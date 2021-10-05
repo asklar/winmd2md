@@ -508,7 +508,8 @@ void Program::process_method(output& ss, const MethodDef& method, string_view re
     paramNames.push_back(p.Name());
   }
   constexpr auto resultParamName = "result";
-  if (!paramNames.empty() && paramNames[0] == resultParamName) {
+  constexpr auto operationParamName = "operation";
+  if (!paramNames.empty() && (paramNames[0] == resultParamName || paramNames[0] == operationParamName)) {
     paramNames.erase(paramNames.begin());
   }
 

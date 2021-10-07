@@ -507,8 +507,7 @@ void Program::process_method(output& ss, const MethodDef& method, string_view re
   for (auto const& p : method.ParamList()) {
     paramNames.push_back(p.Name());
   }
-  constexpr auto resultParamName = "result";
-  if (!paramNames.empty() && paramNames[0] == resultParamName) {
+  if (!paramNames.empty() && realName.empty() && returnType != "void") {
     paramNames.erase(paramNames.begin());
   }
 
